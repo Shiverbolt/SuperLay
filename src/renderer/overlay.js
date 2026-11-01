@@ -272,9 +272,9 @@
       fitQueued = false;
       const scale = +(cfg?.overlay?.scale || 1);
       root.style.zoom = String(scale);
-      const w = root.getBoundingClientRect().width;
-      const avail = window.innerWidth - 8;
-      if (w > avail) root.style.zoom = String(scale * (avail / w));
+      const r = root.getBoundingClientRect();
+      const fit = Math.min(1, (window.innerWidth - 8) / r.width, (window.innerHeight - 8) / r.height);
+      if (fit < 1) root.style.zoom = String(scale * fit);
     });
   }
   function queueMeasure() {

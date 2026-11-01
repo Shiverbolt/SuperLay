@@ -2,6 +2,19 @@
 
 A minimal performance overlay for Windows games. It themes itself from each game's cover art and reports frame generation correctly.
 
+![SuperLay over Forza Horizon 6, themed from its cover art](docs/screenshots/ingame-forza.png)
+<sub>Live over Forza Horizon 6. The pink palette and backdrop come from the game's cover art, and FSR 4 is detected as active.</sub>
+
+| Card layout with frame generation | Per-game themes from cover art |
+|---|---|
+| ![Card layout preview showing 233 displayed and 116 rendered FPS with FG 2×](docs/screenshots/home-card.png) | ![Games page with Forza Horizon 6 and Wuthering Waves themes](docs/screenshots/games.png) |
+| **Frame gen and upscaling: every number shows its source** | **Overlay layout, position and sizing** |
+| ![Frame generation settings explaining measured, Reflex, estimated, Lossless Scaling and manual sources](docs/screenshots/framegen.png) | ![Overlay settings with layout and position pickers](docs/screenshots/overlay.png) |
+| **Theme presets and cover-art mode** | **Pill layout (default)** |
+| ![Theme settings with presets](docs/screenshots/themes.png) | ![Overview with the pill layout preview](docs/screenshots/home.png) |
+
+Regenerate the settings screenshots with `npm run shots`.
+
 ## Install
 
 Download `SuperLay-Setup-x.y.z.exe` (or the portable `.exe`) from [Releases](https://github.com/Shiverbolt/SuperLay/releases/latest). The build isn't code-signed yet, so Windows SmartScreen may warn: choose **More info → Run anyway**.

@@ -13,6 +13,7 @@
     "start": "electron .",
     "test": "node test/run.js",
     "icon": "node scripts/make-icon.js",
+    "shots": "electron . --shots=docs/screenshots",
     "get-presentmon": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/get-presentmon.ps1",
     "dist": "node scripts/make-icon.js && electron-builder --win --x64 --publish never"
   },

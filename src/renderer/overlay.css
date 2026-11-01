@@ -140,11 +140,12 @@ body {
 .layout-card .fg-chip { margin-left: auto; }
 .layout-card #graph { width: 100%; height: 46px; }
 .layout-card .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
-.layout-card .stat.meter { grid-column: 1 / -1; display: grid; grid-template-columns: 44px auto 1fr; align-items: center; column-gap: 4px; }
-.layout-card .stat.meter i { margin-right: 8px; }
-.layout-card .stat.meter .track { display: block; grid-column: 3; grid-row: 1; height: 4px; border-radius: 3px; background: color-mix(in oklab, var(--line) 70%, transparent); overflow: hidden; }
+.layout-card .stat.meter { grid-column: 1 / -1; display: grid; grid-template-columns: 44px auto auto 1fr; align-items: baseline; column-gap: 4px; }
+.layout-card .stat.meter > * { grid-row: 1; }
 .layout-card .stat.meter label { grid-column: 1; }
-.layout-card .stat.meter b, .layout-card .stat.meter i { grid-row: 1; }
+.layout-card .stat.meter b { grid-column: 2; }
+.layout-card .stat.meter i { grid-column: 3; margin-right: 8px; }
+.layout-card .stat.meter .track { display: block; grid-column: 4; align-self: center; height: 4px; border-radius: 3px; background: color-mix(in oklab, var(--line) 70%, transparent); overflow: hidden; }
 .layout-card .stat b { font-size: 13px; }
 .layout-card .up-chip .model { display: inline; }
 

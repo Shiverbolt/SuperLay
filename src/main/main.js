@@ -397,6 +397,33 @@ function setupIpc() {
   ipcMain.handle('hotkeys:pause', (_e, paused) => { if (paused) globalShortcut.unregisterAll(); else registerHotkeys(); return hotkeyFailures; });
 }
 
+// ------------------------------------------------------------------ README screenshots (npm run shots)
+async function captureShots(dir) {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  fs.mkdirSync(dir, { recursive: true });
+  openSettings();
+  const wc = settingsWin.webContents;
+  await new Promise((r) => wc.once('did-finish-load', r));
+  await wait(3000);
+  const shot = async (name) => fs.writeFileSync(path.join(dir, `${name}.png`), (await wc.capturePage()).toPNG());
+  const original = settings.get().overlay.layout;
+  // Diagnostics is left out on purpose: it shows local paths and running processes.
+  for (const page of ['home', 'overlay', 'metrics', 'themes', 'framegen', 'games']) {
+    await wc.executeJavaScript(`document.querySelector('#nav [data-page="${page}"]').click()`);
+    await wait(1500);
+    await shot(page);
+  }
+  await wc.executeJavaScript(`document.querySelector('#nav [data-page="home"]').click()`);
+  for (const layout of ['card', 'minimal']) {
+    settings.set({ overlay: { layout } });
+    await wait(2500);
+    await shot(`home-${layout}`);
+  }
+  settings.set({ overlay: { layout: original } });
+  await wait(300);
+  app.quit();
+}
+
 // ------------------------------------------------------------------ boot
 app.whenReady().then(() => {
   const dataDir = app.getPath('userData');
@@ -422,8 +449,11 @@ app.whenReady().then(() => {
   startLoop();
 
   const S = settings.get();
-  app.setLoginItemSettings({ openAtLogin: S.general.launchAtStartup, args: ['--hidden'] });
-  if (firstRun || (!S.general.startMinimized && !process.argv.includes('--hidden'))) openSettings();
+  const shotsArg = process.argv.find((a) => a.startsWith('--shots='));
+  if (!shotsArg) {
+    app.setLoginItemSettings({ openAtLogin: S.general.launchAtStartup, args: ['--hidden'] });
+    if (firstRun || (!S.general.startMinimized && !process.argv.includes('--hidden'))) openSettings();
+  }
 
   settings.onChange((data, patch) => {
     if (patch.overlay?.updateMs) startLoop();
@@ -433,6 +463,8 @@ app.whenReady().then(() => {
     pushConfig();
     sendSettings('settings:changed', data);
   });
+
+  if (shotsArg) captureShots(path.resolve(shotsArg.slice(8)));
 });
 
 app.on('second-instance', openSettings);
