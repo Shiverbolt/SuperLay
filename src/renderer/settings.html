@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: file:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src 'self'">
+  <title>SuperLay</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <header class="titlebar">
+    <div class="brand"><span class="logo"></span>SuperLay</div>
+    <div class="now-playing" id="nowPlaying"></div>
+  </header>
+
+  <div class="app">
+    <nav class="side" id="nav">
+      <button data-page="home" class="active"><span class="ic">◉</span>Overview</button>
+      <button data-page="overlay"><span class="ic">▣</span>Overlay</button>
+      <button data-page="metrics"><span class="ic">≋</span>Metrics</button>
+      <button data-page="themes"><span class="ic">◐</span>Themes</button>
+      <button data-page="framegen"><span class="ic">⧉</span>Frame gen &amp; upscaling</button>
+      <button data-page="games"><span class="ic">▤</span>Games</button>
+      <button data-page="hotkeys"><span class="ic">⌘</span>Hotkeys</button>
+      <button data-page="general"><span class="ic">⚙</span>General</button>
+      <button data-page="diag"><span class="ic">⚑</span>Diagnostics</button>
+      <div class="side-foot" id="version"></div>
+    </nav>
+
+    <main class="pages">
+      <!-- ================================================= overview -->
+      <section class="page active" data-page="home">
+        <h1>Overview</h1>
+        <div class="hero">
+          <div class="preview-stage" id="stage">
+            <div class="stage-bg empty" id="stageBg"></div>
+            <iframe id="preview" src="overlay.html" title="Overlay preview"></iframe>
+          </div>
+          <div class="hero-side">
+            <div class="status-card" id="pmCard">
+              <div class="sc-head"><span class="pip" id="pmPip"></span><b>Frame capture</b></div>
+              <p id="pmText">Checking PresentMon…</p>
+              <div class="row-btns" id="pmBtns"></div>
+            </div>
+            <div class="status-card">
+              <div class="sc-head"><span class="pip" id="senPip"></span><b>Sensors</b></div>
+              <p id="senText">Starting…</p>
+            </div>
+            <label class="toggle-row"><span>Show preview on screen</span><input type="checkbox" id="demoToggle"><i class="sw"></i></label>
+          </div>
+        </div>
+        <h2>Current game</h2>
+        <div class="game-now" id="gameNow"><p class="muted">No game detected. Start a game in borderless or windowed mode and it shows up here.</p></div>
+      </section>
+
+      <!-- ================================================= overlay -->
+      <section class="page" data-page="overlay">
+        <h1>Overlay</h1>
+        <div class="group">
+          <div class="field">
+            <div class="label">Layout</div>
+            <div class="layout-pick" data-seg="overlay.layout">
+              <button data-v="pill"><span class="lp lp-pill"><i></i><i></i><i></i><i></i></span>Pill</button>
+              <button data-v="card"><span class="lp lp-card"><i></i><i></i><i></i></span>Card</button>
+              <button data-v="minimal"><span class="lp lp-min"><i></i></span>Minimal</button>
+            </div>
+          </div>
+          <div class="field">
+            <div class="label">Position</div>
+            <div class="pos-pick" data-seg="overlay.position">
+              <button data-v="top-left"></button><button data-v="top-center"></button><button data-v="top-right"></button>
+              <button data-v="bottom-left"></button><span></span><button data-v="bottom-right"></button>
+            </div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="slider"><label>Scale</label><input type="range" min="0.6" max="2" step="0.05" data-bind="overlay.scale"><output data-fmt="x"></output></div>
+          <div class="slider"><label>Background opacity</label><input type="range" min="0" max="1" step="0.05" data-bind="overlay.opacity"><output data-fmt="pct"></output></div>
+          <div class="slider"><label>Corner radius</label><input type="range" min="0" max="24" step="1" data-bind="overlay.radius"><output data-fmt="px"></output></div>
+          <div class="slider"><label>Horizontal offset</label><input type="range" min="0" max="400" step="2" data-bind="overlay.offsetX"><output data-fmt="px"></output></div>
+          <div class="slider"><label>Vertical offset</label><input type="range" min="0" max="400" step="2" data-bind="overlay.offsetY"><output data-fmt="px"></output></div>
+          <div class="slider"><label>Update interval</label><input type="range" min="100" max="1000" step="50" data-bind="overlay.updateMs"><output data-fmt="ms"></output></div>
+        </div>
+        <div class="group">
+          <label class="toggle-row"><span>Blurred cover-art backdrop<small>Tints the panel with the game's artwork</small></span><input type="checkbox" data-bind="overlay.coverBackdrop"><i class="sw"></i></label>
+          <label class="toggle-row"><span>Show game name<small>Card layout only</small></span><input type="checkbox" data-bind="overlay.showGameName"><i class="sw"></i></label>
+        </div>
+      </section>
+
+      <!-- ================================================= metrics -->
+      <section class="page" data-page="metrics">
+        <h1>Metrics</h1>
+        <div class="group grid2" id="metricToggles"></div>
+        <h2>Statistics</h2>
+        <div class="group">
+          <div class="slider"><label>FPS averaging window</label><input type="range" min="250" max="3000" step="250" data-bind="stats.fpsWindowMs"><output data-fmt="ms"></output></div>
+          <div class="slider"><label>1% low window</label><input type="range" min="3" max="60" step="1" data-bind="stats.lowWindowSec"><output data-fmt="s"></output></div>
+          <div class="slider"><label>Graph span</label><input type="range" min="2" max="15" step="1" data-bind="stats.graphSeconds"><output data-fmt="s"></output></div>
+        </div>
+        <p class="note">FPS and frame time come from frames that actually reached the display, not from presents. 1% low is the 99th-percentile displayed frame time over the window.</p>
+      </section>
+
+      <!-- ================================================= themes -->
+      <section class="page" data-page="themes">
+        <h1>Themes</h1>
+        <div class="group">
+          <div class="field">
+            <div class="label">Theme source</div>
+            <div class="seg" data-seg="theme.mode">
+              <button data-v="auto">From cover art</button><button data-v="preset">Preset</button><button data-v="custom">Custom accent</button>
+            </div>
+          </div>
+          <div class="field" id="presetField">
+            <div class="label">Preset <small class="muted">(also the fallback when no artwork is found)</small></div>
+            <div class="presets" id="presets"></div>
+          </div>
+          <div class="field" id="customField">
+            <div class="label">Accent colour</div>
+            <div class="color-row"><input type="color" data-bind="theme.customAccent"><span class="muted" id="customHex"></span></div>
+          </div>
+        </div>
+        <div class="group">
+          <label class="toggle-row"><span>Look up cover art online<small>On a game's first launch: Steam library data, then the Steam store. Cached afterwards.</small></span><input type="checkbox" data-bind="theme.onlineLookup"><i class="sw"></i></label>
+          <div class="slider"><label>Theme transition</label><input type="range" min="0" max="2000" step="100" data-bind="theme.transitionMs"><output data-fmt="ms"></output></div>
+          <label class="toggle-row"><span>Reduce motion<small>Disables number easing and entrance animations</small></span><input type="checkbox" data-bind="theme.reduceMotion"><i class="sw"></i></label>
+        </div>
+      </section>
+
+      <!-- ================================================= frame gen -->
+      <section class="page" data-page="framegen">
+        <h1>Frame generation &amp; upscaling</h1>
+        <div class="explain">
+          <div><b>Displayed FPS</b><p>Frames that reached the screen, including generated ones. This is the headline number.</p></div>
+          <div><b>Rendered FPS</b><p>Frames the game actually rendered. Shown with its source so you know how much to trust it.</p></div>
+        </div>
+        <div class="sources">
+          <div><span class="tag t1">measured</span>PresentMon tagged each frame (AFMF, XeSS FG): exact.</div>
+          <div><span class="tag t2">reflex timing</span>Game emits Reflex/PCL markers: simulation rate measured directly.</div>
+          <div><span class="tag t3">estimated</span>In-game FG detected; GPU-time cadence shows heavy and light frames alternating.</div>
+          <div><span class="tag t4">lossless scaling</span>Lossless Scaling's output rate vs. the game's own presents.</div>
+          <div><span class="tag t5">manual</span>Your multiplier below.</div>
+        </div>
+        <div class="group">
+          <div class="field">
+            <div class="label">In-game frame generation multiplier</div>
+            <div class="seg" data-seg="framegen.inGameMultiplier">
+              <button data-v="auto">Auto</button><button data-v="off">Off</button><button data-v="2">2×</button><button data-v="3">3×</button><button data-v="4">4×</button>
+            </div>
+            <small class="muted">Used only when a frame-generation library is loaded and nothing better is available. Pick the factor set in-game if Auto can't tell (e.g. DLSS Multi Frame Gen).</small>
+          </div>
+          <label class="toggle-row"><span>Detect Lossless Scaling</span><input type="checkbox" data-bind="framegen.detectLosslessScaling"><i class="sw"></i></label>
+          <label class="toggle-row"><span>Show measurement source on overlay</span><input type="checkbox" data-bind="framegen.showSource"><i class="sw"></i></label>
+        </div>
+        <h2>Upscaler detection</h2>
+        <p class="note">SuperLay reads the libraries the game has loaded (DLSS, FSR 2/3/4, XeSS, OptiScaler) and their versions. Anti-cheat protected games block that, so SuperLay checks which of the game's own DLLs are mapped in memory instead. A filled dot means active; a hollow dot means shipped with the game but not confirmed. DLSS presets and AMD's driver-side FSR 4 upgrade aren't exposed to other apps, so they're labelled as capabilities, not facts.</p>
+      </section>
+
+      <!-- ================================================= games -->
+      <section class="page" data-page="games">
+        <h1>Games</h1>
+        <p class="note">Each game is themed from its cover art the first time it runs. Override the theme, refetch art, or turn the overlay off per game.</p>
+        <div class="games" id="games"></div>
+      </section>
+
+      <!-- ================================================= hotkeys -->
+      <section class="page" data-page="hotkeys">
+        <h1>Hotkeys</h1>
+        <div class="group">
+          <div class="hk"><span>Show / hide overlay</span><button class="key" data-hk="toggleOverlay"></button></div>
+          <div class="hk"><span>Cycle layout</span><button class="key" data-hk="cycleLayout"></button></div>
+          <div class="hk"><span>Open settings</span><button class="key" data-hk="openSettings"></button></div>
+        </div>
+        <p class="note">Click a shortcut, then press the new combination. Esc cancels, Backspace clears.</p>
+        <p class="warn-text" id="hkWarn"></p>
+      </section>
+
+      <!-- ================================================= general -->
+      <section class="page" data-page="general">
+        <h1>General</h1>
+        <div class="group">
+          <label class="toggle-row"><span>Launch at Windows sign-in</span><input type="checkbox" data-bind="general.launchAtStartup"><i class="sw"></i></label>
+          <label class="toggle-row"><span>Start in tray</span><input type="checkbox" data-bind="general.startMinimized"><i class="sw"></i></label>
+          <label class="toggle-row"><span>Show only while a game is running</span><input type="checkbox" data-bind="general.showOnlyInGames"><i class="sw"></i></label>
+          <label class="toggle-row"><span>Hide when the game loses focus</span><input type="checkbox" data-bind="general.hideWhenUnfocused"><i class="sw"></i></label>
+        </div>
+        <h2>Never treat as a game</h2>
+        <div class="group">
+          <textarea id="blocklist" spellcheck="false" rows="7"></textarea>
+          <small class="muted">One executable per line. Apps that render with the GPU (browsers, launchers) present frames too.</small>
+        </div>
+        <div class="row-btns"><button class="btn ghost" id="openData">Open data folder</button><button class="btn ghost danger" id="resetAll">Reset all settings</button></div>
+      </section>
+
+      <!-- ================================================= diagnostics -->
+      <section class="page" data-page="diag">
+        <h1>Diagnostics</h1>
+        <div class="group">
+          <div class="kv"><span>PresentMon</span><b id="dPm">–</b></div>
+          <div class="kv"><span>Executable</span><code id="dPmPath">–</code></div>
+          <div class="row-btns">
+            <button class="btn" id="pmDownload">Download latest PresentMon</button>
+            <button class="btn ghost" id="pmBrowse">Locate…</button>
+            <button class="btn ghost" id="pmRestart">Restart capture</button>
+          </div>
+          <div class="text-field"><label>Extra PresentMon arguments</label><input type="text" data-bind="presentmon.extraArgs" spellcheck="false" placeholder="e.g. --no_track_input"></div>
+        </div>
+        <div class="group">
+          <div class="kv"><span>Running as administrator</span><b id="dAdmin">–</b></div>
+          <div class="kv"><span>Performance Log Users member</span><b id="dPlu">–</b></div>
+          <div class="row-btns"><button class="btn ghost" id="relaunch">Relaunch as administrator</button></div>
+        </div>
+        <h2>Live</h2>
+        <div class="group"><div id="dLive" class="live-grid"></div></div>
+        <h2>Presenting processes</h2>
+        <div class="group"><div id="dProcs" class="procs"></div></div>
+      </section>
+    </main>
+  </div>
+  <script src="settings.js"></script>
+</body>
+</html>

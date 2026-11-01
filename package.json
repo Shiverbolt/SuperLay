@@ -1,0 +1,47 @@
+{
+  "name": "superlay",
+  "productName": "SuperLay",
+  "version": "1.0.0",
+  "description": "Minimal, game-themed performance overlay with correct frame-generation reporting",
+  "main": "src/main/main.js",
+  "author": "Shiverbolt",
+  "license": "MIT",
+  "homepage": "https://github.com/Shiverbolt/SuperLay",
+  "repository": { "type": "git", "url": "https://github.com/Shiverbolt/SuperLay.git" },
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/run.js",
+    "icon": "node scripts/make-icon.js",
+    "get-presentmon": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/get-presentmon.ps1",
+    "dist": "node scripts/make-icon.js && electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "app.superlay",
+    "productName": "SuperLay",
+    "copyright": "Copyright © 2026 Shiverbolt",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["src/**/*", "package.json"],
+    "asarUnpack": ["src/main/helper.ps1"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "icon": "build/icon.png",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "SuperLay-Setup-${version}.exe"
+    },
+    "portable": { "artifactName": "SuperLay-${version}-portable.exe" }
+  }
+}

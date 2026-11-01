@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: file:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>SuperLay Overlay</title>
+  <link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+  <div id="root" class="layout-pill pos-top-left">
+    <div class="panel" id="panel">
+      <div class="backdrop" aria-hidden="true"><img id="coverA" alt=""><img id="coverB" alt=""></div>
+      <div class="content">
+        <div class="head" data-m="gameName">
+          <span class="bar"></span><span id="gameName" class="game-name"></span><span class="live" id="live"></span>
+        </div>
+
+        <div class="fps-block" data-m="fps">
+          <div class="fps-main">
+            <span class="num" id="fps">0</span><span class="unit">FPS</span>
+            <span class="chip fg-chip" id="fgChip" data-m="framegen" hidden>FG <b id="fgMult">2×</b></span>
+          </div>
+          <div class="fps-sub" id="fpsSub" data-m="renderedFps" hidden>
+            <span id="rendered">0</span> rendered<span class="src" id="fgSrc"></span>
+          </div>
+        </div>
+
+        <canvas id="graph" data-m="graph"></canvas>
+
+        <div class="stats">
+          <div class="stat" data-m="frametime"><label>FT</label><b id="ft">0</b><i>ms</i></div>
+          <div class="stat" data-m="low1"><label>1% low</label><b id="low1">0</b></div>
+          <div class="stat" data-m="latency"><label>Lat</label><b id="lat">–</b><i>ms</i></div>
+          <div class="stat meter" data-m="gpuLoad"><label>GPU</label><b id="gpu">0</b><i>%</i><span class="track"><span class="fill" id="gpuBar"></span></span></div>
+          <div class="stat" data-m="gpuTemp"><label>Temp</label><b id="gpuTemp">–</b><i>°C</i></div>
+          <div class="stat" data-m="gpuClock"><label>Clock</label><b id="gpuClock">–</b><i>MHz</i></div>
+          <div class="stat meter" data-m="vram"><label>VRAM</label><b id="vram">0</b><i id="vramUnit">GB</i><span class="track"><span class="fill" id="vramBar"></span></span></div>
+          <div class="stat meter" data-m="cpuLoad"><label>CPU</label><b id="cpu">0</b><i>%</i><span class="track"><span class="fill" id="cpuBar"></span></span></div>
+          <div class="stat meter" data-m="ram"><label>RAM</label><b id="ram">0</b><i>GB</i><span class="track"><span class="fill" id="ramBar"></span></span></div>
+          <div class="stat" data-m="time"><label>Time</label><b id="clock">--:--</b></div>
+        </div>
+
+        <div class="chips" id="chips">
+          <span class="chip up-chip" id="upChip" data-m="upscaler" hidden><span class="dot"></span><span id="upLabel"></span><span class="model" id="upModel"></span></span>
+          <span class="chip fgname-chip" id="fgNameChip" data-m="framegen" hidden></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>

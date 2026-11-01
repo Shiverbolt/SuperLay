@@ -1,0 +1,160 @@
+/* Theme tokens are registered so palette swaps interpolate instead of snapping. */
+@property --accent { syntax: '<color>'; inherits: true; initial-value: #8b7bff; }
+@property --accent2 { syntax: '<color>'; inherits: true; initial-value: #6bb7ff; }
+@property --bg { syntax: '<color>'; inherits: true; initial-value: #15131c; }
+@property --surface { syntax: '<color>'; inherits: true; initial-value: #211e2b; }
+@property --line { syntax: '<color>'; inherits: true; initial-value: #34303f; }
+@property --text { syntax: '<color>'; inherits: true; initial-value: #f4f3f8; }
+@property --muted { syntax: '<color>'; inherits: true; initial-value: #a9a6b5; }
+@property --good { syntax: '<color>'; inherits: true; initial-value: #6fdc9a; }
+@property --warn { syntax: '<color>'; inherits: true; initial-value: #f0c45a; }
+@property --bad { syntax: '<color>'; inherits: true; initial-value: #ff6b6b; }
+
+:root {
+  --theme-ms: 900ms;
+  --panel-alpha: 0.9;
+  --radius: 14px;
+  --margin: 14px;
+  --spring: cubic-bezier(.22, 1.2, .36, 1);
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  color-scheme: dark; /* keeps the settings-preview iframe transparent */
+  transition: --accent var(--theme-ms) var(--ease), --accent2 var(--theme-ms) var(--ease), --bg var(--theme-ms) var(--ease),
+    --surface var(--theme-ms) var(--ease), --line var(--theme-ms) var(--ease), --text var(--theme-ms) var(--ease),
+    --muted var(--theme-ms) var(--ease);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: transparent; overflow: hidden; user-select: none; cursor: default; }
+body {
+  font-family: 'Segoe UI Variable Display', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+
+#root { position: absolute; padding: var(--margin); }
+#root.pos-top-left { top: 0; left: 0; }
+#root.pos-top-right { top: 0; right: 0; }
+#root.pos-bottom-left { bottom: 0; left: 0; }
+#root.pos-bottom-right { bottom: 0; right: 0; }
+#root.pos-top-center { top: 0; left: 50%; transform: translateX(-50%); }
+
+/* ---------------------------------------------------------------- panel + entrance */
+.panel {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: color-mix(in oklab, var(--bg) calc(var(--panel-alpha) * 100%), transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--line) 80%, transparent) inset,
+    0 8px 28px -10px color-mix(in oklab, var(--bg) 90%, black);
+  opacity: 0;
+  transform: translateY(-6px) scale(.96);
+  filter: blur(6px);
+  transition: opacity 320ms var(--ease), transform 520ms var(--spring), filter 320ms var(--ease);
+  transform-origin: top left;
+}
+.pos-top-right .panel { transform-origin: top right; }
+.pos-bottom-left .panel { transform-origin: bottom left; }
+.pos-bottom-right .panel { transform-origin: bottom right; }
+.pos-top-center .panel { transform-origin: top center; }
+#root.shown .panel { opacity: 1; transform: none; filter: none; }
+
+.backdrop { position: absolute; inset: 0; pointer-events: none; }
+.backdrop img {
+  position: absolute; inset: -30%; width: 160%; height: 160%; object-fit: cover;
+  filter: blur(26px) saturate(1.4); opacity: 0; transition: opacity 900ms var(--ease);
+}
+.backdrop img.on { opacity: .22; }
+.no-backdrop .backdrop { display: none; }
+.backdrop::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(115deg, color-mix(in oklab, var(--accent) 16%, transparent), transparent 55%);
+}
+
+.content { position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 14px; }
+
+/* ---------------------------------------------------------------- shared pieces */
+.head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.head .bar { width: 3px; height: 14px; border-radius: 2px; background: linear-gradient(var(--accent), var(--accent2)); }
+.game-name { font-size: 12px; font-weight: 600; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.game-name.swap { animation: swapIn 520ms var(--spring); }
+.live { width: 6px; height: 6px; border-radius: 50%; background: var(--good); margin-left: auto; box-shadow: 0 0 8px var(--good); }
+.live.off { background: var(--muted); box-shadow: none; }
+@keyframes swapIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.fps-block { display: flex; flex-direction: column; justify-content: center; }
+.fps-main { display: flex; align-items: baseline; gap: 4px; }
+.fps-main .num { font-size: 26px; font-weight: 700; line-height: 1; letter-spacing: -.02em; color: var(--text); min-width: 2.2ch; text-align: right; }
+.fps-main .unit { font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--accent); }
+.fps-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; animation: swapIn 420ms var(--spring); }
+.fps-sub #rendered { color: var(--text); font-weight: 600; }
+.fps-sub .src { margin-left: 6px; opacity: .75; font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; }
+.fps-sub .src:empty { display: none; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  white-space: nowrap; color: var(--text);
+  background: color-mix(in oklab, var(--surface) 85%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--line) 90%, transparent) inset;
+  animation: chipIn 480ms var(--spring);
+}
+@keyframes chipIn { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
+.fg-chip { align-self: center; margin-left: 6px; color: var(--bg); background: linear-gradient(120deg, var(--accent), var(--accent2)); box-shadow: 0 0 12px -2px color-mix(in oklab, var(--accent) 70%, transparent); }
+.fg-chip b { font-weight: 800; }
+.up-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.up-chip.installed .dot { background: transparent; box-shadow: 0 0 0 1.5px var(--muted) inset; }
+.up-chip .model { font-weight: 500; color: var(--muted); letter-spacing: 0; display: none; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips:not(:has(.chip:not([hidden]))) { display: none; }
+
+#graph { display: block; width: 110px; height: 34px; }
+
+.stats { display: flex; gap: 12px; align-items: center; }
+.stat { display: flex; align-items: baseline; gap: 3px; white-space: nowrap; animation: swapIn 380ms var(--spring); }
+.stat label { font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 3px; }
+.stat b { font-size: 14px; font-weight: 650; color: var(--text); transition: color 400ms var(--ease); }
+.stat i { font-style: normal; font-size: 10px; color: var(--muted); }
+.stat .track { display: none; }
+.stat.warn b { color: var(--warn); }
+.stat.bad b { color: var(--bad); }
+
+.fill {
+  display: block; height: 100%; width: 0; border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent2), var(--accent));
+  transition: width 600ms var(--ease), background 400ms;
+}
+.stat.warn .fill { background: var(--warn); }
+.stat.bad .fill { background: var(--bad); }
+
+/* ---------------------------------------------------------------- pill (default, horizontal) */
+.layout-pill .head { display: none; }
+.layout-pill .fps-block { min-width: 74px; }
+.layout-pill .chips .model { display: none; }
+
+/* ---------------------------------------------------------------- card (vertical) */
+.layout-card .content { flex-direction: column; align-items: stretch; gap: 8px; width: 252px; padding: 12px 14px 12px; }
+.layout-card .fps-main .num { font-size: 34px; min-width: 0; text-align: left; }
+.layout-card .fps-main .unit { font-size: 11px; }
+.layout-card .fg-chip { margin-left: auto; }
+.layout-card #graph { width: 100%; height: 46px; }
+.layout-card .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.layout-card .stat.meter { grid-column: 1 / -1; display: grid; grid-template-columns: 44px auto 1fr; align-items: center; column-gap: 4px; }
+.layout-card .stat.meter i { margin-right: 8px; }
+.layout-card .stat.meter .track { display: block; grid-column: 3; grid-row: 1; height: 4px; border-radius: 3px; background: color-mix(in oklab, var(--line) 70%, transparent); overflow: hidden; }
+.layout-card .stat.meter label { grid-column: 1; }
+.layout-card .stat.meter b, .layout-card .stat.meter i { grid-row: 1; }
+.layout-card .stat b { font-size: 13px; }
+.layout-card .up-chip .model { display: inline; }
+
+/* ---------------------------------------------------------------- minimal */
+.layout-minimal .content { padding: 5px 11px; gap: 0; }
+.layout-minimal .head, .layout-minimal #graph, .layout-minimal .stats, .layout-minimal .chips, .layout-minimal .fps-sub { display: none !important; }
+.layout-minimal .fps-main .num { font-size: 20px; min-width: 0; }
+.layout-minimal .fg-chip { padding: 1px 6px; font-size: 9px; }
+
+/* metrics toggled off in settings */
+.m-off { display: none !important; }
+
+.reduce-motion *, .reduce-motion .panel { transition-duration: 0ms !important; animation: none !important; }
