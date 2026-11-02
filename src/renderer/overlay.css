@@ -33,7 +33,9 @@ body {
 }
 [hidden] { display: none !important; }
 
-#root { position: absolute; padding: var(--margin); }
+/* max-content: an absolutely positioned box otherwise shrinks to fit the space left of its `left` offset.
+   For top-center (left: 50%) that is half the window, which clipped the pill when the FG row appeared. */
+#root { position: absolute; padding: var(--margin); width: max-content; }
 #root.pos-top-left { top: 0; left: 0; }
 #root.pos-top-right { top: 0; right: 0; }
 #root.pos-bottom-left { bottom: 0; left: 0; }

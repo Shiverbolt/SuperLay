@@ -95,7 +95,7 @@ function pushConfig() {
     overlay: S.overlay, metrics: S.metrics, stats: S.stats, theme: S.theme, framegen: S.framegen, limiter: S.limiter,
     palette: currentTheme(),
     cover: state.target?.entry?.thumb || null,
-    gameName: state.target?.entry?.name || state.target?.game?.name || '',
+    gameName: state.demo ? 'Preview' : (state.target?.entry?.name || state.target?.game?.name || ''),
     demo: state.demo,
   });
 }
@@ -209,6 +209,7 @@ function computeFrame() {
   setOverlayShown(visible);
   if (!overlayWin || !visible) return;
   placeOverlay();
+  if (state.demo) return; // the overlay generates its own demo frames; real ones would interleave and flicker
 
   const det = t?.detection;
   const cap = state.rtss.running && state.rtss.cap?.limit > 0 ? state.rtss.cap : null;
@@ -603,6 +604,17 @@ async function captureShots(dir) {
     await shot(`home-${layout}`);
   }
   settings.set({ overlay: { layout: original } });
+
+  // The real overlay window, in demo mode, for each layout at top-center (the position that once clipped).
+  const originalPos = settings.get().overlay.position;
+  state.demo = true;
+  for (const layout of ['pill', 'card', 'minimal']) {
+    settings.set({ overlay: { layout, position: 'top-center' } });
+    await wait(3000);
+    fs.writeFileSync(path.join(dir, `overlay-${layout}.png`), (await overlayWin.webContents.capturePage()).toPNG());
+  }
+  state.demo = false;
+  settings.set({ overlay: { layout: original, position: originalPos } });
   await wait(300);
   app.quit();
 }

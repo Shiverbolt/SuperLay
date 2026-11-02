@@ -5,6 +5,8 @@ A minimal performance overlay for Windows games. It themes itself from each game
 ![SuperLay over Forza Horizon 6, themed from its cover art](docs/screenshots/ingame-forza.png)
 <sub>Live over Forza Horizon 6. The pink palette and backdrop come from the game's cover art, and FSR 4 is detected as active.</sub>
 
+![Pill layout with frame generation, upscaler and frame cap](docs/screenshots/overlay-pill.png)
+
 | Card layout with frame generation | Per-game themes from cover art |
 |---|---|
 | ![Card layout preview showing 233 displayed and 116 rendered FPS with FG 2×](docs/screenshots/home-card.png) | ![Games page with Forza Horizon 6 and Wuthering Waves themes](docs/screenshots/games.png) |
