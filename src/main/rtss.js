@@ -61,18 +61,36 @@ function readProfile(dir, exeName) {
 // One elevated helper per SuperLay session (one UAC prompt), reached over a named pipe locked to this
 // user and a random token. It exits when SuperLay does. See rtss-broker.ps1.
 const broker = { pipe: null, token: null, starting: null };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function pipeRequest(line, timeoutMs = 10000) {
+/** One request over one connection. Resolves { reply } or { error: code } ('ETIMEDOUT' when no answer). */
+function pipeOnce(line, timeoutMs) {
   return new Promise((resolve) => {
     let buf = '', done = false;
     const finish = (v) => { if (!done) { done = true; clearTimeout(timer); sock.destroy(); resolve(v); } };
     const sock = net.connect(`\\\\.\\pipe\\${broker.pipe}`);
-    const timer = setTimeout(() => finish(null), timeoutMs);
-    sock.on('connect', () => { if (line === null) finish('connected'); else sock.write(`${line}\n`); });
-    sock.on('data', (d) => { buf += d; const nl = buf.indexOf('\n'); if (nl >= 0) finish(buf.slice(0, nl).trim()); });
-    sock.on('error', () => finish(null));
+    const timer = setTimeout(() => finish({ error: 'ETIMEDOUT' }), timeoutMs);
+    sock.on('connect', () => sock.write(`${line}\n`));
+    sock.on('data', (d) => { buf += d; const nl = buf.indexOf('\n'); if (nl >= 0) finish({ reply: buf.slice(0, nl).trim() }); });
+    sock.on('error', (e) => finish({ error: e.code || 'EPIPE' }));
   });
 }
+
+/**
+ * Request with retries for transient pipe states: ENOENT (helper still starting / between listens) and EBUSY.
+ * Returns the reply line, or null if the helper never answered.
+ */
+async function pipeRequest(line, { timeoutMs = 30000, connectWindowMs = 3000 } = {}) {
+  const until = Date.now() + connectWindowMs;
+  for (;;) {
+    const r = await pipeOnce(line, timeoutMs);
+    if (r.reply !== undefined) return r.reply;
+    if ((r.error === 'ENOENT' || r.error === 'EBUSY') && Date.now() < until) { await sleep(100); continue; }
+    return null;
+  }
+}
+
+const ping = (connectWindowMs = 1500) => pipeRequest(`${broker.token}|ping`, { timeoutMs: 3000, connectWindowMs }).then((r) => r === 'pong');
 
 async function startBroker(dir, elevated) {
   broker.pipe = `SuperLay-RTSS-${crypto.randomBytes(8).toString('hex')}`;
@@ -83,7 +101,8 @@ async function startBroker(dir, elevated) {
   const psArgs = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(inner, 'utf16le').toString('base64')];
 
   if (elevated) {
-    spawn('powershell.exe', psArgs, { windowsHide: true, stdio: 'ignore' });
+    // unref: the helper exits when SuperLay does; SuperLay must never wait on the helper.
+    spawn('powershell.exe', psArgs, { windowsHide: true, stdio: 'ignore' }).unref();
   } else {
     const outer = `Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -ArgumentList ${psArgs.map(q).join(',')}`;
     const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', outer], 120000);
@@ -92,17 +111,16 @@ async function startBroker(dir, elevated) {
       return { ok: false, message: /cancel/i.test(r.stderr) ? 'Administrator permission was declined.' : (r.stderr.trim().split(/\r?\n/)[0] || 'Could not start the RTSS helper.') };
     }
   }
-  for (let i = 0; i < 60; i++) {           // the broker needs a moment to compile and open its pipe
-    if (await pipeRequest(null, 500)) return { ok: true };
-    await new Promise((r) => setTimeout(r, 250));
-  }
+  // The helper needs a few seconds to start PowerShell, compile, and open its pipe.
+  if (await ping(45000)) return { ok: true };
   broker.pipe = null;
   return { ok: false, message: 'The RTSS helper did not start.' };
 }
 
 async function ensureBroker(dir, elevated) {
-  if (broker.pipe && await pipeRequest(null, 1000)) return { ok: true };
-  if (!broker.starting) broker.starting = startBroker(dir, elevated).finally(() => { broker.starting = null; });
+  if (broker.starting) return broker.starting;
+  if (broker.pipe && await ping()) return { ok: true };
+  broker.starting = startBroker(dir, elevated).finally(() => { broker.starting = null; });
   return broker.starting;
 }
 
@@ -117,12 +135,16 @@ function brokerReady() { return !!broker.pipe; }
 async function applyCap(dir, exeName, { limit, mode }, elevated) {
   const den = Number.isInteger(limit) ? 1 : 100;
   const line = () => `${broker.token}|${exeName}|${Math.round(limit * den)}|${den}|${MODE_IDS[mode] ?? -1}`;
-  let reply = null;
-  for (let attempt = 0; attempt < 2 && !reply; attempt++) {
-    const b = await ensureBroker(dir, elevated);
+  let b = await ensureBroker(dir, elevated);
+  if (!b.ok) return b;
+  let reply = await pipeRequest(line());
+  if (!reply) {
+    // Only start a new helper (another UAC prompt) if the current one really stopped answering.
+    if (await ping()) return { ok: false, message: 'RTSS didn\'t respond in time. Make sure RTSS is running and try again.' };
+    broker.pipe = null;
+    b = await ensureBroker(dir, elevated);
     if (!b.ok) return b;
     reply = await pipeRequest(line());
-    if (!reply) broker.pipe = null;        // broker died (killed, sign-out...): start a new one once
   }
   if (!reply) return { ok: false, message: 'Lost contact with the RTSS helper.' };
   if (reply !== 'ok') return { ok: false, message: reply.replace(/^err\s*/, '') };

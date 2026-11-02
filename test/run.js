@@ -377,6 +377,20 @@ atest('OptiScaler: install records written by another SuperLay copy are picked u
   } finally { t.cleanup(); }
 });
 
+atest('RTSS helper: back-to-back and concurrent requests never lose contact', async () => {
+  const dir = 'C:\\Program Files (x86)\\RivaTuner Statistics Server';
+  if (!fsx.existsSync(pathx.join(dir, 'RTSSHooks64.dll'))) { console.log('    (skipped: RTSS not installed)'); return; }
+  const rtssMod = require('../src/main/rtss');
+  // elevated=true starts the helper unelevated (no UAC): it can't write RTSS's profiles, but the pipe
+  // protocol is identical, and "Lost contact" is exactly the failure users saw.
+  const cap = { limit: 60, mode: 'async' };
+  const results = [];
+  for (let i = 0; i < 8; i++) results.push(await rtssMod.applyCap(dir, 'superlay-selftest.exe', cap, true));
+  results.push(...await Promise.all(Array.from({ length: 5 }, () => rtssMod.applyCap(dir, 'superlay-selftest.exe', cap, true))));
+  const lost = results.filter((r) => /lost contact|did not start/i.test(r.message));
+  assert.strictEqual(lost.length, 0, `${lost.length} of ${results.length} lost contact`);
+});
+
 test('anti-cheat signatures', () => {
   const root = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'sl-ac-'));
   try {

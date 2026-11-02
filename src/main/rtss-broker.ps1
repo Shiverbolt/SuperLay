@@ -10,8 +10,10 @@
 #     profile named like "game.exe";
 #   - it exits when SuperLay exits.
 #
-# Request (one line):  <token>|<profile.exe>|<limit>|<denominator>|<mode>
-# Response (one line): ok | err <message>
+# Request (one line):  <token>|<profile.exe>|<limit>|<denominator>|<mode>   or   <token>|ping
+# Response (one line): ok | err <message> | pong
+#
+# Several connections can be open at once (each served on its own thread); RTSS calls are serialised.
 param(
   [Parameter(Mandatory)] [string]$Dll,
   [Parameter(Mandatory)] [string]$Pipe,
@@ -57,18 +59,38 @@ public static class RtssBroker {
         return "ok";
     }
 
-    static string Handle(string line, string token) {
+    static readonly object rtssLock = new object();
+    static string token;
+
+    static string Handle(string line) {
         string[] f = line.Split('|');
+        if (f.Length == 2 && f[0] == token && f[1] == "ping") return "pong";
         if (f.Length != 5 || f[0] != token) return "err Unauthorized.";
         uint limit, den; int mode;
         if (!ProfileName.IsMatch(f[1])) return "err Invalid profile name.";
         if (!uint.TryParse(f[2], out limit) || limit > 100000) return "err Invalid limit.";
         if (!uint.TryParse(f[3], out den) || den < 1 || den > 1000) return "err Invalid denominator.";
         if (!int.TryParse(f[4], out mode) || mode < -1 || mode > 2) return "err Invalid mode.";
-        try { return Apply(f[1], limit, den, mode); } catch (Exception e) { return "err " + e.Message.Replace('\n', ' '); }
+        // RTSS's profile API keeps a single "current profile", so calls must not interleave.
+        lock (rtssLock) {
+            try { return Apply(f[1], limit, den, mode); } catch (Exception e) { return "err " + e.Message.Replace('\n', ' '); }
+        }
     }
 
-    public static void Run(string dll, string pipe, string token, int parentPid) {
+    static void Serve(object o) {
+        var srv = (NamedPipeServerStream)o;
+        try {
+            var r = new StreamReader(srv);
+            var w = new StreamWriter(srv);
+            w.AutoFlush = true;
+            string line;
+            while ((line = r.ReadLine()) != null) w.WriteLine(Handle(line.Trim()));
+        } catch (IOException) { /* client went away */ }
+        finally { srv.Dispose(); }
+    }
+
+    public static void Run(string dll, string pipe, string tok, int parentPid) {
+        token = tok;
         IntPtr h = LoadLibrary(dll);
         if (h == IntPtr.Zero) throw new Exception("Could not load " + dll);
         load = Fn<NameFn>(h, "LoadProfile"); save = Fn<NameFn>(h, "SaveProfile");
@@ -83,18 +105,28 @@ public static class RtssBroker {
         watcher.Start();
 
         var sec = new PipeSecurity();
-        sec.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User, PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        // CreateNewInstance is required to open the 2nd+ listening instance of a pipe with a custom DACL;
+        // without it the next listen throws "Access to the path is denied" and the helper died mid-request.
+        sec.AddAccessRule(new PipeAccessRule(WindowsIdentity.GetCurrent().User,
+            PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
+        // Accept loop: hand each connection to its own thread and immediately listen again, so a client that
+        // connects right after another one disconnected never finds the pipe busy.
+        int failures = 0;
         while (true) {
-            using (var srv = new NamedPipeServerStream(pipe, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.None, 4096, 4096, sec)) {
+            NamedPipeServerStream srv;
+            try {
+                srv = new NamedPipeServerStream(pipe, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
+                    PipeTransmissionMode.Byte, PipeOptions.None, 4096, 4096, sec);
                 srv.WaitForConnection();
-                try {
-                    var r = new StreamReader(srv);
-                    var w = new StreamWriter(srv);
-                    w.AutoFlush = true;
-                    string line;
-                    while ((line = r.ReadLine()) != null) w.WriteLine(Handle(line.Trim(), token));
-                } catch (IOException) { /* client went away */ }
+                failures = 0;
+            } catch (Exception) {
+                if (++failures > 20) throw;   // persistent failure: let SuperLay see the helper is gone
+                Thread.Sleep(100);
+                continue;
             }
+            var t = new Thread(Serve);
+            t.IsBackground = true;
+            t.Start(srv);
         }
     }
 }
