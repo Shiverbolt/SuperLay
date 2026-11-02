@@ -11,6 +11,7 @@ const { Detector } = require('./detect');
 const { ThemeStore, identify, presetTheme, customTheme, PRESETS } = require('./theme');
 const { makeIcon } = require('./icon');
 const rtss = require('./rtss');
+const { Components } = require('./components');
 
 app.setAppUserModelId('app.superlay');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -23,7 +24,7 @@ const PRELOAD = path.join(__dirname, '..', 'preload');
 const LAYOUTS = ['pill', 'card', 'minimal'];
 const PANEL_MARGIN = 14; // matches --margin in overlay.css
 
-let settings, themes, helper, pm, detector;
+let settings, themes, helper, pm, detector, components;
 let overlayWin = null, settingsWin = null, tray = null;
 let loopTimer = null;
 let hotkeyFailures = [];
@@ -271,25 +272,12 @@ function startPresentMon() {
   pm.start(PresentMon.locate(S.presentmon.path, vendorDirs()), S.presentmon.extraArgs);
 }
 
-async function downloadPresentMon() {
-  const res = await net.fetch('https://api.github.com/repos/GameTechDev/PresentMon/releases/latest', {
-    headers: { 'User-Agent': 'SuperLay', Accept: 'application/vnd.github+json' },
-  });
-  if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-  const rel = await res.json();
-  const assets = rel.assets || [];
-  const asset = assets.find((a) => /^PresentMon-[\d.]+-x64\.exe$/i.test(a.name))
-    || assets.find((a) => /x64\.exe$/i.test(a.name) && !/service|setup|install/i.test(a.name));
-  if (!asset) throw new Error('No console PresentMon build in the latest release.');
-  const bin = await net.fetch(asset.browser_download_url, { headers: { 'User-Agent': 'SuperLay' } });
-  if (!bin.ok) throw new Error(`Download failed (${bin.status})`);
-  const dir = path.join(app.getPath('userData'), 'vendor');
-  fs.mkdirSync(dir, { recursive: true });
-  const dest = path.join(dir, asset.name);
-  fs.writeFileSync(dest, Buffer.from(await bin.arrayBuffer()));
-  settings.set({ presentmon: { path: dest } });
-  startPresentMon();
-  return { path: dest, version: rel.tag_name };
+// Installs/updates of PresentMon and RTSS live in components.js.
+async function componentAct(id, action) {
+  const res = await components.act(id, action);
+  if (id === 'rtss') await refreshRtssStatus();
+  sendSettings('components:changed');
+  return res;
 }
 
 function relaunchElevated() {
@@ -463,9 +451,8 @@ function setupIpc() {
   ipcMain.handle('games:forget', (_e, key) => { themes.forget(key); return true; });
 
   ipcMain.handle('diag:get', diagnostics);
-  ipcMain.handle('pm:download', async () => {
-    try { return { ok: true, ...(await downloadPresentMon()) }; } catch (e) { return { ok: false, error: e.message }; }
-  });
+  ipcMain.handle('components:status', (_e, opts) => components.status(opts || {}));
+  ipcMain.handle('components:act', (_e, id, action) => componentAct(id, action));
   ipcMain.handle('pm:browse', async () => {
     const r = await dialog.showOpenDialog(settingsWin, { title: 'Locate PresentMon', filters: [{ name: 'PresentMon', extensions: ['exe'] }], properties: ['openFile'] });
     if (r.canceled || !r.filePaths[0]) return null;
@@ -480,7 +467,6 @@ function setupIpc() {
   ipcMain.handle('overlay:demo', (_e, on) => { state.demo = !!on; pushConfig(); return state.demo; });
   ipcMain.handle('rtss:status', (_e, exe) => rtssStatus(exe));
   ipcMain.handle('rtss:apply', (_e, { exe, limit, mode }) => rtssApply(exe, limit, mode));
-  ipcMain.handle('rtss:download', () => shell.openExternal('https://www.guru3d.com/download/rtss-rivatuner-statistics-server-download/'));
   ipcMain.handle('hotkeys:pause', (_e, paused) => { if (paused) globalShortcut.unregisterAll(); else registerHotkeys(); return hotkeyFailures; });
 }
 
@@ -495,9 +481,9 @@ async function captureShots(dir) {
   const shot = async (name) => fs.writeFileSync(path.join(dir, `${name}.png`), (await wc.capturePage()).toPNG());
   const original = settings.get().overlay.layout;
   // Diagnostics is left out on purpose: it shows local paths and running processes.
-  for (const page of ['home', 'overlay', 'metrics', 'themes', 'framegen', 'limiter', 'games']) {
+  for (const page of ['home', 'overlay', 'metrics', 'themes', 'framegen', 'limiter', 'components', 'games']) {
     await wc.executeJavaScript(`document.querySelector('#nav [data-page="${page}"]').click()`);
-    await wait(1500);
+    await wait(page === 'components' ? 9000 : 1500); // components checks GitHub and winget for updates
     await shot(page);
   }
   await wc.executeJavaScript(`document.querySelector('#nav [data-page="home"]').click()`);
@@ -520,6 +506,10 @@ app.whenReady().then(() => {
   helper = new Helper();
   pm = new PresentMon();
   detector = new Detector(helper);
+  components = new Components({
+    net, shell, settings, dataDir,
+    vendorDirs, pmStatus: () => pm.status, stopPresentMon: () => pm.stop(false),
+  });
 
   helper.on('status', (s) => { state.helperStatus = s; });
   pm.on('status', (s) => sendSettings('pm:status', s));

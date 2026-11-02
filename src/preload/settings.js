@@ -13,7 +13,8 @@ contextBridge.exposeInMainWorld('superlay', {
   refetchGame: invoke('games:refetch'),
   forgetGame: invoke('games:forget'),
   diagnostics: invoke('diag:get'),
-  downloadPresentMon: invoke('pm:download'),
+  componentsStatus: invoke('components:status'),
+  componentAct: invoke('components:act'),
   browsePresentMon: invoke('pm:browse'),
   restartPresentMon: invoke('pm:restart'),
   relaunchAdmin: invoke('app:relaunchAdmin'),
@@ -23,9 +24,8 @@ contextBridge.exposeInMainWorld('superlay', {
   pauseHotkeys: invoke('hotkeys:pause'),
   rtssStatus: invoke('rtss:status'),
   rtssApply: invoke('rtss:apply'),
-  rtssDownload: invoke('rtss:download'),
   on: (ch, fn) => {
-    if (!['settings:changed', 'games:changed', 'pm:status'].includes(ch)) return;
+    if (!['settings:changed', 'games:changed', 'pm:status', 'components:changed'].includes(ch)) return;
     ipcRenderer.on(ch, (_e, d) => fn(d));
   },
 });

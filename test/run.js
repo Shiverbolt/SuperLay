@@ -176,6 +176,14 @@ test('frame-time source: driver FG forces display timing', () => {
   assert.strictEqual(pm.stats(100, { frametimeSource: 'present' }).frametimeSource, 'display');
 });
 
+test('component version comparison', () => {
+  const { newer } = require('../src/main/components');
+  assert.ok(newer('2.10.1', '2.6.0'));
+  assert.ok(newer('7.3.8', '7.3.7'));
+  assert.ok(!newer('2.6.0', '2.6.0'));
+  assert.ok(!newer('2.6', '2.6.0'));
+});
+
 const rtss = require('../src/main/rtss');
 test('RTSS profile parsing (real Forza profile shape)', () => {
   const p = rtss.parseFramerate('[OSD]\nEnableOSD=1\n[Framerate]\nLimit=5994\nLimitDenominator=100\nLimitTime=0\nSyncLimiter=1\n[Hooking]\nEnableHooking=1\n');

@@ -20,6 +20,7 @@
     $$('.page').forEach((p) => p.classList.toggle('active', p.dataset.page === b.dataset.page));
     if (b.dataset.page === 'games') loadGames();
     if (b.dataset.page === 'limiter') { limiterDirty = false; loadLimiter(); }
+    if (b.dataset.page === 'components') loadComps(true);
     $$('.seg, .layout-pick, .pos-pick').forEach(placeThumb);
   }));
 
@@ -237,7 +238,7 @@
       ? 'RTSS isn\'t installed. It\'s free; SuperLay uses it to cap frame rates inside the game.'
       : `Version ${r.version}${r.running ? ', running.' : ' — installed but not running. Start RTSS for caps to take effect.'}`
         + (r.elevated || r.brokerReady ? ' Caps apply instantly.' : ' The first cap you apply this session asks for administrator permission once; after that they apply instantly.');
-    const btns = r.installed ? '' : '<button class="btn" data-a="get">Get RTSS</button>';
+    const btns = r.installed ? '' : '<button class="btn" data-goto="components">Install RTSS in Components</button>';
     if ($('#rtssBtns').dataset.h !== btns) { $('#rtssBtns').innerHTML = btns; $('#rtssBtns').dataset.h = btns; }
     $('#limiterBody').style.display = r.installed ? '' : 'none';
     if (!r.installed) return;
@@ -289,7 +290,6 @@
     applyCap(Math.round(v * 100) / 100);
   });
   $('#capRemove').addEventListener('click', () => applyCap(0));
-  $('#rtssBtns').addEventListener('click', (e) => { if (e.target.closest('[data-a="get"]')) api.rtssDownload(); });
   setInterval(() => { if (!document.hidden && $('.page[data-page="limiter"]').classList.contains('active')) loadLimiter(); }, 2000);
 
   // ---------------------------------------------------------------- general
@@ -299,21 +299,96 @@
   $('#resetAll').addEventListener('click', async () => { if (confirm('Reset every SuperLay setting to its default?')) { S = await api.resetSettings(); refreshAll(); } });
 
   // ---------------------------------------------------------------- diagnostics + live status
-  const busy = async (btn, fn) => { btn.disabled = true; const t = btn.textContent; btn.textContent = 'Working…'; try { return await fn(); } finally { btn.disabled = false; btn.textContent = t; } };
-  $('#pmDownload').addEventListener('click', (e) => busy(e.target, async () => {
-    const r = await api.downloadPresentMon();
-    if (!r.ok) alert(`Download failed: ${r.error}`);
-  }));
   $('#pmBrowse').addEventListener('click', () => api.browsePresentMon());
   $('#pmRestart').addEventListener('click', () => api.restartPresentMon());
   $('#relaunch').addEventListener('click', () => api.relaunchAdmin());
   $('#pmBtns').addEventListener('click', (e) => {
     const a = e.target.closest('button')?.dataset.a;
-    if (a === 'download') busy(e.target, async () => { const r = await api.downloadPresentMon(); if (!r.ok) alert(`Download failed: ${r.error}`); });
-    if (a === 'browse') api.browsePresentMon();
+    if (a === 'install') runComponent('presentmon', 'install');
     if (a === 'admin') api.relaunchAdmin();
     if (a === 'restart') api.restartPresentMon();
   });
+
+  // any [data-goto] button jumps to that page
+  document.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-goto]');
+    if (g) $(`#nav [data-page="${g.dataset.goto}"]`).click();
+  });
+
+  // ---------------------------------------------------------------- components
+  const COMP_GLYPH = { presentmon: 'PM', rtss: 'RT' };
+  const ACTION_LABEL = { install: 'Install', update: 'Update', start: 'Start RTSS', page: 'Open download page' };
+  let comps = [];
+  let compChecking = false;
+
+  function compTags(c) {
+    const t = [];
+    if (c.busy) t.push(['busy', c.busy === 'updating' ? 'Updating' : c.busy === 'installing' ? 'Installing' : 'Working']);
+    else if (!c.installed) t.push([c.required ? 'bad' : '', c.required ? 'Required · not installed' : 'Not installed']);
+    else {
+      t.push(['ok', `Installed${c.version ? ` · v${c.version}` : ''}`]);
+      if (c.id === 'presentmon') t.push(c.running ? ['ok', 'Capturing'] : c.state === 'denied' ? ['bad', 'Needs permission'] : ['warn', c.state]);
+      if (c.id === 'rtss') t.push(c.running ? ['ok', 'Running'] : ['warn', 'Not running']);
+      if (c.updateAvailable) t.push(['warn', `Update · v${c.latest}`]);
+      else if (c.latest) t.push(['', 'Up to date']);
+    }
+    return t.map(([cls, txt]) => `<span class="tagc ${cls}">${esc(txt)}</span>`).join('');
+  }
+
+  function compActions(c) {
+    const a = [];
+    if (!c.installed) a.push(c.canInstall ? ['install', ''] : ['page', '']);
+    if (c.installed && c.updateAvailable && c.canInstall) a.push(['update', '']);
+    if (c.id === 'rtss' && c.installed && !c.running) a.push(['start', c.updateAvailable ? 'ghost' : '']);
+    if (c.id === 'rtss' && !c.installed && c.canInstall) a.push(['page', 'ghost']);
+    return a.map(([act, cls]) => `<button class="btn ${cls}" data-comp="${c.id}" data-act="${act}" ${c.busy ? 'disabled' : ''}>${ACTION_LABEL[act]}</button>`).join('');
+  }
+
+  function renderComps() {
+    const html = comps.map((c, i) => `
+      <div class="comp ${c.installed ? '' : 'missing'}" style="animation-delay:${i * 50}ms">
+        <div class="glyph">${COMP_GLYPH[c.id] || '•'}</div>
+        <div>
+          <h3>${esc(c.name)} ${compTags(c)}</h3>
+          <div class="by">${esc(c.by)}${c.required ? ' · required' : ' · optional'}</div>
+          <p class="role">${esc(c.role)}</p>
+          <p class="src" ${c.path ? `title="${esc(c.path)}"` : ''}>${esc(c.source)}</p>
+          ${c.error ? `<p class="err">${esc(c.error)}</p>` : ''}
+          ${c.id === 'presentmon' && c.state === 'denied' ? '<p class="err">Capture needs administrator rights or the Performance Log Users group. Diagnostics → Relaunch as administrator.</p>' : ''}
+        </div>
+        <div class="acts">${compActions(c)}</div>
+      </div>`).join('');
+    // keep running animations: only touch the DOM when something changed
+    if ($('#comps').dataset.h !== html) { $('#comps').innerHTML = html; $('#comps').dataset.h = html; }
+    const missingRequired = comps.some((c) => c.required && !c.installed);
+    const attention = missingRequired || comps.some((c) => c.updateAvailable);
+    $('#compBadge').hidden = !attention;
+    $('#compBadge').classList.toggle('bad', missingRequired);
+  }
+
+  async function loadComps(checkUpdates = false) {
+    if (checkUpdates) { compChecking = true; $('#compCheck').disabled = true; $('#compCheck').textContent = 'Checking…'; }
+    try { comps = await api.componentsStatus({ checkUpdates }); renderComps(); } finally {
+      if (checkUpdates) { compChecking = false; $('#compCheck').disabled = false; $('#compCheck').textContent = 'Check for updates'; }
+    }
+  }
+
+  async function runComponent(id, act) {
+    const c = comps.find((x) => x.id === id);
+    if (c) { c.busy = act === 'update' ? 'updating' : act === 'install' ? 'installing' : 'working'; c.error = null; renderComps(); }
+    const res = await api.componentAct(id, act);
+    await loadComps(false);
+    if (!res.ok && c) { const cur = comps.find((x) => x.id === id); if (cur) { cur.error = res.message; renderComps(); } }
+    refreshDiag();
+  }
+
+  $('#comps').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-comp]');
+    if (b) runComponent(b.dataset.comp, b.dataset.act);
+  });
+  $('#compCheck').addEventListener('click', () => loadComps(true));
+  api.on('components:changed', () => loadComps(false));
+  setInterval(() => { if (!document.hidden && !compChecking && $('.page[data-page="components"]').classList.contains('active')) loadComps(false); }, 3000);
 
   const fmt = {
     n: (v, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : '–'),
@@ -323,7 +398,7 @@
   const PM_TEXT = {
     running: ['ok', 'Capturing displayed frames with PresentMon.'],
     starting: ['warn', 'Starting PresentMon…'],
-    missing: ['bad', 'PresentMon isn\'t installed. SuperLay uses Intel\'s open-source PresentMon to see every displayed frame, including generated ones.'],
+    missing: ['bad', 'PresentMon isn\'t installed. SuperLay uses Intel\'s open-source PresentMon to see every displayed frame, including generated ones. It\'s a one-click install.'],
     denied: ['bad', 'PresentMon needs administrator rights, or membership in Performance Log Users (sign out and back in after joining).'],
     error: ['bad', ''],
     stopped: ['warn', 'Capture stopped.'],
@@ -336,7 +411,7 @@
     const [cls, txt] = PM_TEXT[pmS.state] || ['warn', ''];
     $('#pmPip').className = `pip ${cls}`;
     $('#pmText').textContent = (pmS.state === 'error' ? pmS.message : txt) + (pmS.state === 'running' && !pmS.frameTypeTracking ? ' Older build: per-frame type tracking unavailable, update for exact AFMF/XeSS FG detection.' : '');
-    const btns = pmS.state === 'missing' ? [['download', 'Download PresentMon', ''], ['browse', 'Locate…', 'ghost']]
+    const btns = pmS.state === 'missing' ? [['install', 'Install PresentMon', '']]
       : pmS.state === 'denied' ? [['admin', 'Relaunch as admin', '']]
         : pmS.state === 'error' ? [['restart', 'Retry', 'ghost']] : [];
     const html = btns.map(([a, l, c]) => `<button class="btn ${c}" data-a="${a}">${l}</button>`).join('');
@@ -418,6 +493,7 @@
   refreshAll();
   await loadGames();
   refreshDiag();
+  loadComps(false);
   setInterval(() => { if (!document.hidden) refreshDiag(); }, 1000);
   window.addEventListener('resize', () => $$('.seg').forEach(placeThumb));
 })();

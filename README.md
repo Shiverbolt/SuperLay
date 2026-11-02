@@ -28,7 +28,18 @@ npm test           # frame-statistics tests
 npm run dist       # installer + portable exe in dist/
 ```
 
-SuperLay runs from the tray. Open settings by clicking the tray icon or pressing **Alt+Shift+S**. On first run, go to **Overview → Download PresentMon**. Frame capture works without admin if your account is in *Performance Log Users*; otherwise use **Diagnostics → Relaunch as administrator**.
+SuperLay runs from the tray. Open settings by clicking the tray icon or pressing **Alt+Shift+S**.
+
+### Components
+
+**Settings → Components** installs and updates the programs SuperLay works with:
+
+| Component | Needed for | Installed from |
+|---|---|---|
+| **PresentMon** (required) | FPS, frame times, frame-generation reporting | Intel's GitHub releases, into SuperLay's data folder |
+| **RTSS** (optional) | Frame limiter | Guru3D's package via Windows Package Manager (winget), checksum-verified |
+
+Frame capture works without admin if your account is in *Performance Log Users*; otherwise use **Diagnostics → Relaunch as administrator**.
 
 | Hotkey | Action |
 |---|---|

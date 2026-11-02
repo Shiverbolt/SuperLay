@@ -22,6 +22,7 @@
       <button data-page="limiter"><span class="ic">◷</span>Frame limiter</button>
       <button data-page="games"><span class="ic">▤</span>Games</button>
       <button data-page="hotkeys"><span class="ic">⌘</span>Hotkeys</button>
+      <button data-page="components"><span class="ic">⬡</span>Components<span class="nav-badge" id="compBadge" hidden></span></button>
       <button data-page="general"><span class="ic">⚙</span>General</button>
       <button data-page="diag"><span class="ic">⚑</span>Diagnostics</button>
       <div class="side-foot" id="version"></div>
@@ -235,6 +236,14 @@
         <p class="warn-text" id="hkWarn"></p>
       </section>
 
+      <!-- ================================================= components -->
+      <section class="page" data-page="components">
+        <h1>Components</h1>
+        <p class="note">Programs SuperLay works with. They're installed separately, kept up to date from here, and you can remove them like any other app.</p>
+        <div class="comps" id="comps"></div>
+        <div class="row-btns"><button class="btn ghost" id="compCheck">Check for updates</button></div>
+      </section>
+
       <!-- ================================================= general -->
       <section class="page" data-page="general">
         <h1>General</h1>
@@ -259,8 +268,8 @@
           <div class="kv"><span>PresentMon</span><b id="dPm">–</b></div>
           <div class="kv"><span>Executable</span><code id="dPmPath">–</code></div>
           <div class="row-btns">
-            <button class="btn" id="pmDownload">Download latest PresentMon</button>
-            <button class="btn ghost" id="pmBrowse">Locate…</button>
+            <button class="btn ghost" data-goto="components">Install or update in Components</button>
+            <button class="btn ghost" id="pmBrowse">Use a different PresentMon…</button>
             <button class="btn ghost" id="pmRestart">Restart capture</button>
           </div>
           <div class="text-field"><label>Extra PresentMon arguments</label><input type="text" data-bind="presentmon.extraArgs" spellcheck="false" placeholder="e.g. --no_track_input"></div>
