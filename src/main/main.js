@@ -13,7 +13,7 @@ const { makeIcon } = require('./icon');
 const rtss = require('./rtss');
 const { Components } = require('./components');
 const { OptiScaler } = require('./optiscaler');
-const { scanLibrary } = require('./library');
+const { scanLibrary, isNonGameExe } = require('./library');
 
 app.setAppUserModelId('app.superlay');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -139,8 +139,10 @@ async function setTarget(pid, appName, title) {
   t.info = info;
   t.game = identify({ ...info, title, app: appName });
   const exeName = path.basename(info.path || appName || '').toLowerCase();
-  t.disabled = !!settings.get().games[t.game.key]?.disabled || settings.get().blocklist.includes(exeName);
-  if (exeName === path.basename(process.execPath).toLowerCase()) t.disabled = true;
+  // System apps, launchers and the "never a game" list: no overlay, no game entry, no detection.
+  const notAGame = isNonGameExe(info.path || appName, settings.get().blocklist) || exeName === path.basename(process.execPath).toLowerCase();
+  t.disabled = notAGame || !!settings.get().games[t.game.key]?.disabled;
+  if (notAGame) { pushConfig(); return; }
 
   // Theme: cached instantly, otherwise fetched once (cover art lookup) and stored.
   const cached = themes.get(t.game.key);
@@ -410,7 +412,8 @@ async function themeLibrary() {
 /** Installed games (store records) merged with games SuperLay has seen running. */
 function knownGames() {
   const byKey = new Map();
-  const add = (g) => { if (g.exe && !byKey.has(g.key) && fs.existsSync(g.exe)) byKey.set(g.key, g); };
+  const blocklist = settings.get().blocklist;
+  const add = (g) => { if (g.exe && !byKey.has(g.key) && !isNonGameExe(g.exe, blocklist) && fs.existsSync(g.exe)) byKey.set(g.key, g); };
   const t = state.target;
   if (t?.game?.key && t.info?.path) add({ key: t.game.key, name: t.entry?.name || t.game.name, exe: t.info.path });
   for (const g of state.library.games) add({ key: g.key, name: g.name, exe: g.exe, store: g.store, appId: g.appId });
@@ -625,6 +628,8 @@ app.whenReady().then(() => {
   const firstRun = !fs.existsSync(path.join(dataDir, 'settings.json'));
   settings = new Settings(dataDir);
   themes = new ThemeStore(dataDir);
+  // Entries older versions created for non-games (the Windows desktop, launchers, window-title-only names).
+  themes.prune((g) => !g.exe || isNonGameExe(g.exe, settings.get().blocklist));
   helper = new Helper();
   pm = new PresentMon();
   detector = new Detector(helper);

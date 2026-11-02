@@ -194,6 +194,7 @@ class Components {
 
   optiCard(latest) {
     const o = this.d.opti;
+    o.loadManifest();
     const cached = o.cachedPackage();
     const games = Object.keys(o.installs).length;
     return {

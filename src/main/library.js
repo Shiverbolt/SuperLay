@@ -23,6 +23,24 @@ function run(cmd, args) {
 }
 
 const keyOf = (exe) => crypto.createHash('sha1').update(exe.toLowerCase()).digest('hex').slice(0, 12);
+
+// Store launchers and clients: they render with the GPU and take focus, but they're never the game.
+const LAUNCHERS = /^(redlauncher|redprelauncher|epicgameslauncher|steam|steamwebhelper|galaxyclient|gogalaxy|ubisoftconnect|upc|uplay|eadesktop|eabackgroundservice|origin|battle\.net|blizzard ?launcher|bethesdanetlauncher|rockstarservice|launcher|launcherpatcher|playnite\.(desktop|fullscreen)app|heroiclauncher|amazon games|xboxpcapp|gamingservices)\.exe$/i;
+
+/**
+ * True for executables that must never be treated as games: Windows itself (explorer.exe's desktop window is
+ * titled "Program Manager", which once matched a Steam game by name), Store system apps, launchers, and the
+ * user's "never a game" list.
+ */
+function isNonGameExe(exe, blocklist = []) {
+  if (!exe) return true;
+  const lower = exe.toLowerCase();
+  const sysRoot = `${(process.env.SystemRoot || 'C:\\Windows').toLowerCase()}\\`;
+  if (lower.startsWith(sysRoot)) return true;
+  if (/\\windowsapps\\microsoft\.(windows|xbox(app|gamingoverlay)|gamingapp)/.test(lower)) return true;
+  const base = path.basename(lower);
+  return LAUNCHERS.test(base) || blocklist.includes(base);
+}
 const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
 
 /** The game's exe in an install folder: Unreal's *-Shipping.exe if present, else the largest plausible exe. */
@@ -149,4 +167,4 @@ async function scanLibrary(knownExes = []) {
   return games.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-module.exports = { scanLibrary, pickExe, keyOf, NOT_GAMES };
+module.exports = { scanLibrary, pickExe, keyOf, isNonGameExe, NOT_GAMES };

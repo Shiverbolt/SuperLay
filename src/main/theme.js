@@ -293,6 +293,19 @@ class ThemeStore {
     this.save();
   }
 
+  /** Removes entries matching shouldRemove(entry); returns the names removed. */
+  prune(shouldRemove) {
+    const removed = [];
+    for (const [key, g] of Object.entries(this.db)) {
+      if (!shouldRemove(g)) continue;
+      removed.push(g.name);
+      if (g.coverFile) { try { fs.unlinkSync(g.coverFile); } catch { /* gone */ } }
+      delete this.db[key];
+    }
+    if (removed.length) this.save();
+    return removed;
+  }
+
   touch(key) { if (this.db[key]) { this.db[key].lastSeen = Date.now(); this.save(); } }
 
   /** Returns a cached entry immediately when available, otherwise resolves it (network on first run only). */

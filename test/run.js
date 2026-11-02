@@ -351,6 +351,32 @@ atest('OptiScaler: online PvP (Steam) and protected processes need confirmation'
   } finally { t.cleanup(); }
 });
 
+test('non-games: Windows, launchers and the blocklist are never games', () => {
+  const { isNonGameExe } = require('../src/main/library');
+  const win = process.env.SystemRoot || 'C:\\Windows';
+  assert.ok(isNonGameExe(`${win}\\explorer.exe`), 'explorer (desktop window "Program Manager")');
+  assert.ok(isNonGameExe('C:\\Users\\x\\AppData\\Local\\Programs\\CD Projekt Red\\REDlauncher\\REDlauncher.exe'));
+  assert.ok(isNonGameExe('C:\\Program Files (x86)\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe'));
+  assert.ok(isNonGameExe('C:\\Tools\\chrome.exe', ['chrome.exe']));
+  assert.ok(isNonGameExe(''), 'no path');
+  assert.ok(!isNonGameExe('C:\\Program Files (x86)\\Steam\\steamapps\\common\\The Witcher 3\\bin\\x64_dx12\\witcher3.exe'));
+  assert.ok(!isNonGameExe('E:\\SteamLibrary\\steamapps\\common\\ForzaHorizon6\\forzahorizon6.exe'));
+});
+
+atest('OptiScaler: install records written by another SuperLay copy are picked up', async () => {
+  const t = optiFixture();
+  try {
+    const other = new OptiScaler({ net: null, dataDir: t.opti.d.dataDir, helper: t.helper });  // e.g. the dev build
+    assert.strictEqual((await t.opti.gameStatus(t.g)).state, 'none');
+    await new Promise((r) => setTimeout(r, 20));
+    await other.install(t.g, { vendor: 'amd' });
+    const s = await t.opti.gameStatus(t.g);
+    assert.strictEqual(s.state, 'installed', 'not "manual"');
+    await t.opti.uninstall(t.g);
+    assert.strictEqual(t.read('libxess.dll'), 'XESS-GAME');
+  } finally { t.cleanup(); }
+});
+
 test('anti-cheat signatures', () => {
   const root = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'sl-ac-'));
   try {

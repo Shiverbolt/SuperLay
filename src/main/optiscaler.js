@@ -86,7 +86,9 @@ class OptiScaler {
     this.latestInfo = null;
     this.scanCache = new Map();
     this.busy = {};
-    try { this.installs = JSON.parse(fs.readFileSync(this.manifestFile, 'utf8')); } catch { this.installs = {}; }
+    this.installs = {};
+    this.manifestMtime = 0;
+    this.loadManifest();
     this.metaFile = path.join(this.root, 'game-signals.json');
     try { this.meta = JSON.parse(fs.readFileSync(this.metaFile, 'utf8')); } catch { this.meta = { steam: {}, protected: {} }; }
   }
@@ -131,10 +133,25 @@ class OptiScaler {
     return out;
   }
 
+  /**
+   * (Re)reads the install records when the file changed on disk, e.g. written by another SuperLay copy (dev build
+   * vs installed). A failed read never wipes records already in memory.
+   */
+  loadManifest() {
+    let mtime = 0;
+    try { mtime = fs.statSync(this.manifestFile).mtimeMs; } catch { return; }   // no installs yet
+    if (mtime === this.manifestMtime) return;
+    try {
+      this.installs = JSON.parse(fs.readFileSync(this.manifestFile, 'utf8'));
+      this.manifestMtime = mtime;
+    } catch { /* keep what we have; try again next time */ }
+  }
+
   saveManifest() {
     fs.mkdirSync(this.root, { recursive: true });
     fs.writeFileSync(this.manifestFile + '.tmp', JSON.stringify(this.installs, null, 2));
     fs.renameSync(this.manifestFile + '.tmp', this.manifestFile);
+    try { this.manifestMtime = fs.statSync(this.manifestFile).mtimeMs; } catch { /* ignore */ }
   }
 
   // ------------------------------------------------------------ package (the downloaded release)
@@ -220,6 +237,7 @@ class OptiScaler {
 
   /** Install state for one game: none | installed | damaged | manual (someone else's OptiScaler). */
   async gameStatus(game) {
+    this.loadManifest();
     const m = this.installs[game.key];
     const scan = await this.scanGame(game.exe);
     const manualProxy = Object.entries(scan.proxies).find(([name, p]) => /optiscaler/i.test(p.orig) && (!m || m.proxy !== name));
@@ -262,6 +280,7 @@ class OptiScaler {
     if (!scan.writable) throw new Error('SuperLay can\'t write to this game\'s folder. Run SuperLay as administrator or check the folder\'s permissions.');
 
     // Updating: remove our previous install first so its backups are restored before taking new ones.
+    this.loadManifest();
     const prev = this.installs[game.key];
     if (prev) await this.uninstall(game, { alreadyCheckedRunning: true });
     const scan2 = await this.scanGame(game.exe, true);
@@ -323,6 +342,7 @@ class OptiScaler {
   }
 
   async uninstall(game, { alreadyCheckedRunning = false } = {}) {
+    this.loadManifest();
     const m = this.installs[game.key];
     if (!m) throw new Error('OptiScaler wasn\'t installed by SuperLay for this game.');
     if (!alreadyCheckedRunning && await this.isRunning(m.exe)) throw new Error('Close the game first: its files are in use.');
