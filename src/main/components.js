@@ -188,7 +188,34 @@ class Components {
         canInstall: winget,
         page: RTSS_PAGE,
       },
+      this.optiCard(checkUpdates ? await this.d.opti.latest(false) : this.d.opti.latestInfo),
     ];
+  }
+
+  optiCard(latest) {
+    const o = this.d.opti;
+    const cached = o.cachedPackage();
+    const games = Object.keys(o.installs).length;
+    return {
+      id: 'optiscaler',
+      name: 'OptiScaler',
+      by: 'OptiScaler team · open source (GPL-3.0) · not affiliated with SuperLay',
+      role: 'Swaps the upscaler a game uses: for example DLSS or XeSS inputs to FSR 4 on Radeon. Optional. Installed per game from the OptiScaler page.',
+      required: false,
+      installed: !!cached,
+      version: cached?.version || '',
+      latest: latest?.version || '',
+      updateAvailable: !!(cached && latest?.version && newer(latest.version, cached.version)),
+      running: false,
+      state: cached ? 'downloaded' : 'missing',
+      inUse: games,
+      path: cached?.dir || '',
+      source: 'Official releases from github.com/optiscaler/OptiScaler. Problems with SuperLay\'s installer belong in SuperLay\'s issues, not OptiScaler\'s.',
+      busy: o.busy.package || null,
+      error: null,
+      canInstall: true,
+      manage: true,
+    };
   }
 
   async act(id, action) {

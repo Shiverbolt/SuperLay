@@ -20,6 +20,7 @@
       <button data-page="themes"><span class="ic">◐</span>Themes</button>
       <button data-page="framegen"><span class="ic">⧉</span>Frame gen &amp; upscaling</button>
       <button data-page="limiter"><span class="ic">◷</span>Frame limiter</button>
+      <button data-page="optiscaler"><span class="ic">✦</span>OptiScaler</button>
       <button data-page="games"><span class="ic">▤</span>Games</button>
       <button data-page="hotkeys"><span class="ic">⌘</span>Hotkeys</button>
       <button data-page="components"><span class="ic">⬡</span>Components<span class="nav-badge" id="compBadge" hidden></span></button>
@@ -215,6 +216,26 @@
           </div>
           <p class="note">SuperLay sets caps through RTSS's own profile API, the same one MSI Afterburner uses; RTSS does the in-game limiting. RTSS keeps its profiles under Program Files, so the first cap each session asks for administrator permission once (never, if SuperLay runs as admin); a small helper then stays running until SuperLay closes, and it can only change RTSS frame caps. Changes take effect immediately, even mid-game. Turn on <b>Pacing</b> in Metrics to see how steady frames are under the cap.</p>
         </div>
+      </section>
+
+      <!-- ================================================= optiscaler -->
+      <section class="page" data-page="optiscaler">
+        <h1>OptiScaler</h1>
+        <div class="opti-intro">
+          <div>
+            <p><b>OptiScaler</b> swaps the upscaler a game uses. It intercepts the game's DLSS, FSR or XeSS and runs the one you pick instead, for example FSR 4 on a Radeon in a game that only offers DLSS or XeSS. In game, press <b>Insert</b> to open its menu and choose the upscaler.</p>
+            <p class="muted">SuperLay installs the official release and removes it exactly, restoring any game files it replaced. SuperLay isn't affiliated with the OptiScaler team; report installer problems to SuperLay, not to them.</p>
+            <div class="row-btns">
+              <button class="btn ghost" data-url="https://github.com/optiscaler/OptiScaler">OptiScaler on GitHub</button>
+              <button class="btn ghost" data-url="https://github.com/optiscaler/OptiScaler/wiki/Compatibility-List">Game compatibility list</button>
+            </div>
+          </div>
+          <div class="opti-pkg" id="optiPkg"></div>
+        </div>
+        <div class="warn-box"><b>Single-player only.</b> Mods like OptiScaler can get accounts banned in online games. SuperLay blocks games where it finds anti-cheat.</div>
+        <div class="warn-box" id="optiRtss" hidden><b>Using RTSS?</b> OptiScaler recommends turning on <i>Use Microsoft Detours API hooking</i> in RTSS → Setup, and turning RTSS off when using OptiScaler's own frame generation (OptiFG).</div>
+        <h2>Games</h2>
+        <div class="opti-games" id="optiGames"></div>
       </section>
 
       <!-- ================================================= games -->

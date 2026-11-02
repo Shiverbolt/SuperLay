@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('superlay', {
   diagnostics: invoke('diag:get'),
   componentsStatus: invoke('components:status'),
   componentAct: invoke('components:act'),
+  optiStatus: invoke('opti:status'),
+  optiAct: invoke('opti:act'),
   browsePresentMon: invoke('pm:browse'),
   restartPresentMon: invoke('pm:restart'),
   relaunchAdmin: invoke('app:relaunchAdmin'),
@@ -25,7 +27,7 @@ contextBridge.exposeInMainWorld('superlay', {
   rtssStatus: invoke('rtss:status'),
   rtssApply: invoke('rtss:apply'),
   on: (ch, fn) => {
-    if (!['settings:changed', 'games:changed', 'pm:status', 'components:changed'].includes(ch)) return;
+    if (!['settings:changed', 'games:changed', 'pm:status', 'components:changed', 'opti:changed'].includes(ch)) return;
     ipcRenderer.on(ch, (_e, d) => fn(d));
   },
 });

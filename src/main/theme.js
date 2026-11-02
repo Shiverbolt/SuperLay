@@ -162,6 +162,7 @@ const GENERIC = /^(unreal|unity|game|launcher|client|shipping|win64|main|applica
 function cleanName(s) {
   return String(s || '')
     .replace(/[™®©]/g, '')
+    .replace(/\s*\((not responding|keine rückmeldung|ne répond pas)\)\s*$/i, '')
     .replace(/\s*[-–|]\s*(dx1[12]|vulkan|directx ?1[12]|d3d1[12])\b.*$/i, '')
     .replace(/\((dx1[12]|vulkan|64-bit|x64)\)/gi, '')
     .replace(/[-_]?(win64|win32)?[-_]?shipping$/i, '')

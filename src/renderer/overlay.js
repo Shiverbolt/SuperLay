@@ -267,7 +267,8 @@
     const up = f.upscaler;
     $('upChip').hidden = !up;
     if (up) {
-      $('upLabel').textContent = up.label;
+      // With OptiScaler the game's upscaler is only the input; the real output is chosen in Opti's menu.
+      $('upLabel').textContent = up.opti ? `${up.label} → Opti` : up.label;
       $('upModel').textContent = up.model ? `· ${up.model.split(' (')[0]}` : '';
       $('upChip').classList.toggle('installed', up.confidence !== 'active');
       $('upChip').title = up.confidence === 'active' ? 'Loaded by the game' : 'Shipped with the game; could not confirm it is active';

@@ -330,11 +330,12 @@ public static class SLHelper {
         bool first = true;
         foreach (var p in paths) {
             if (p.Length == 0) continue;
-            string ver = "";
-            try { ver = VersionOf(FileVersionInfo.GetVersionInfo(p)); } catch { }
+            string ver = "", orig = "";
+            try { var fv = FileVersionInfo.GetVersionInfo(p); ver = VersionOf(fv); orig = fv.OriginalFilename ?? ""; } catch { }
             if (!first) sb.Append(",");
             first = false;
-            sb.Append("{\"path\":").Append(J(p)).Append(",\"version\":").Append(J(ver)).Append("}");
+            // orig (OriginalFilename) survives renames: it's how a proxy dxgi.dll is recognised as OptiScaler.
+            sb.Append("{\"path\":").Append(J(p)).Append(",\"version\":").Append(J(ver)).Append(",\"orig\":").Append(J(orig)).Append("}");
         }
         return sb.Append("]}").ToString();
     }

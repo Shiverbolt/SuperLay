@@ -21,6 +21,7 @@
     if (b.dataset.page === 'games') loadGames();
     if (b.dataset.page === 'limiter') { limiterDirty = false; loadLimiter(); }
     if (b.dataset.page === 'components') loadComps(true);
+    if (b.dataset.page === 'optiscaler') loadOpti(true);
     $$('.seg, .layout-pick, .pos-pick').forEach(placeThumb);
   }));
 
@@ -292,6 +293,113 @@
   $('#capRemove').addEventListener('click', () => applyCap(0));
   setInterval(() => { if (!document.hidden && $('.page[data-page="limiter"]').classList.contains('active')) loadLimiter(); }, 2000);
 
+  // ---------------------------------------------------------------- OptiScaler
+  let opti = null;
+  const optiMsg = {};          // key -> { ok, text }
+  const tail = (p) => p.split('\\').slice(-3).join('\\');
+  const VENDOR_NOTE = {
+    amd: 'Radeon detected: DLSS spoofing and Fakenvapi are included, so DLSS-only games can use FSR 4.',
+    intel: 'Intel GPU detected: DLSS spoofing and Fakenvapi are included.',
+    nvidia: 'NVIDIA GPU detected: Fakenvapi is left out, as OptiScaler recommends.',
+  };
+
+  function optiTags(g) {
+    const t = [];
+    if (g.busy) t.push(['busy', g.busy === 'remove' ? 'Removing' : 'Installing']);
+    else if (g.state === 'installed') t.push(['ok', `OptiScaler v${g.version} · ${g.proxy}`]);
+    else if (g.state === 'damaged') t.push(['bad', 'Damaged']);
+    else if (g.state === 'manual') t.push(['', `Installed manually as ${g.proxy || 'OptiScaler.dll'}`]);
+    else t.push(['', 'Not installed']);
+    if (g.state === 'installed' && opti.package.version && g.version !== opti.package.version) t.push(['warn', `Update · v${opti.package.version}`]);
+    if (g.antiCheat?.length) t.push(['bad', `Anti-cheat: ${g.antiCheat.join(', ')}`]);
+    if (g.running) t.push(['warn', 'Running']);
+    return t.map(([c, s]) => `<span class="tagc ${c}">${esc(s)}</span>`).join('');
+  }
+
+  function optiActs(g) {
+    if (g.busy) return '';
+    const dis = g.running ? 'disabled title="Close the game first"' : '';
+    const b = (act, label, cls = '') => `<button class="btn ${cls}" data-ok="${g.key}" data-act="${act}" ${dis}>${label}</button>`;
+    const out = [];
+    if (g.state === 'none') {
+      if (g.antiCheat?.length) out.push(b('install-anyway', 'Install anyway…', 'ghost danger'));
+      else {
+        out.push(`<select data-proxy="${g.key}" title="Filename OptiScaler loads as">${['auto', ...g.freeProxies].map((p) => `<option value="${p}">${p === 'auto' ? 'dxgi.dll (auto)' : p}</option>`).join('')}</select>`);
+        out.push(b('install', 'Install'));
+      }
+    } else if (g.state === 'installed' || g.state === 'damaged') {
+      if (g.state === 'damaged') out.push(b('update', 'Repair'));
+      else if (opti.package.version && g.version !== opti.package.version) out.push(b('update', 'Update'));
+      out.push(b('remove', 'Remove', 'ghost'));
+    }
+    out.push(`<button class="btn ghost" data-ok="${g.key}" data-act="folder">Open folder</button>`);
+    return out.join('');
+  }
+
+  function renderOpti() {
+    if (!opti) return;
+    const p = opti.package;
+    const pkgHtml = `
+      <small>Package</small>
+      <div class="v">${p.version ? `v${esc(p.version)}` : 'Not downloaded'}</div>
+      <small>${p.busy ? 'Downloading…' : p.latest ? (p.updateAvailable ? `v${esc(p.latest)} available` : p.version ? 'Latest release' : `Latest: v${esc(p.latest)}`) : 'Latest version unknown'}</small>
+      ${p.busy ? '' : (!p.version || p.updateAvailable) ? `<button class="btn" data-ok="" data-act="download">${p.version ? 'Download update' : 'Download (55 MB)'}</button>` : ''}
+      <small>${esc(VENDOR_NOTE[opti.vendor] || '')}</small>`;
+    if ($('#optiPkg').dataset.h !== pkgHtml) { $('#optiPkg').innerHTML = pkgHtml; $('#optiPkg').dataset.h = pkgHtml; }
+    $('#optiRtss').hidden = !opti.rtssInstalled;
+
+    const html = opti.games.length ? opti.games.map((g, i) => {
+      const m = optiMsg[g.key];
+      const note = g.state === 'damaged' ? `${g.missing} file${g.missing === 1 ? '' : 's'} missing. A game update or Steam's file check probably removed them.`
+        : g.state === 'manual' ? 'Not managed by SuperLay; remove it the way it was installed.'
+          : g.antiCheat?.length && g.state === 'none' ? 'Blocked: this game ships anti-cheat. Only continue if you play it offline.' : '';
+      return `
+      <div class="og" style="animation-delay:${i * 40}ms">
+        ${g.thumb ? `<img src="${g.thumb}" alt="">` : '<div class="noimg"></div>'}
+        <div>
+          <h4>${esc(g.name)} ${optiTags(g)}</h4>
+          <div class="meta" title="${esc(g.dir || '')}">${esc(g.dir ? `…\\${tail(g.dir)}` : '')}${g.takenProxies?.length ? ` · already using: ${esc(g.takenProxies.map((x) => x.name).join(', '))}` : ''}</div>
+          ${note ? `<div class="meta">${esc(note)}</div>` : ''}
+          ${m ? `<div class="${m.ok ? 'ok-msg' : 'err'}">${esc(m.text)}</div>` : ''}
+        </div>
+        <div class="acts">${optiActs(g)}</div>
+      </div>`;
+    }).join('') : '<p class="muted">No games yet. Launch a game once and it appears here.</p>';
+    if ($('#optiGames').dataset.h !== html) { $('#optiGames').innerHTML = html; $('#optiGames').dataset.h = html; }
+  }
+
+  async function loadOpti(checkUpdates = false) {
+    try { opti = await api.optiStatus({ checkUpdates }); renderOpti(); } catch { /* main busy */ }
+  }
+
+  $('.page[data-page="optiscaler"]').addEventListener('click', async (e) => {
+    const u = e.target.closest('[data-url]');
+    if (u) { api.openUrl(u.dataset.url); return; }
+    const b = e.target.closest('button[data-act]');
+    if (!b || b.dataset.ok === undefined) return;
+    const key = b.dataset.ok, act = b.dataset.act;
+    const g = opti?.games.find((x) => x.key === key);
+    let action = act, opts = {};
+    if (act === 'install') opts.proxy = $(`select[data-proxy="${key}"]`)?.value || 'auto';
+    if (act === 'install-anyway') {
+      const ok = confirm(`${g.name} ships anti-cheat (${g.antiCheat.join(', ')}).\n\nUsing OptiScaler in an online game can get your account banned. Only continue if you play this game offline.\n\nInstall OptiScaler anyway?`);
+      if (!ok) return;
+      action = 'install'; opts = { allowAntiCheat: true };
+    }
+    if (act === 'remove' && !confirm(`Remove OptiScaler from ${g.name}? Game files it replaced will be restored.`)) return;
+    b.disabled = true;
+    if (g) { g.busy = action; delete optiMsg[key]; renderOpti(); }
+    const res = await api.optiAct(key || null, action, opts);
+    if (key && act !== 'folder') {
+      optiMsg[key] = res.ok
+        ? { ok: true, text: action === 'remove' ? `Removed${res.kept?.length ? `; kept ${res.kept.join(', ')} because the game has changed ${res.kept.length > 1 ? 'them' : 'it'} since` : ''}.` : `Installed v${res.version} as ${res.proxy}${res.replaced?.length ? `; backed up ${res.replaced.length} game file${res.replaced.length > 1 ? 's' : ''}` : ''}. In game, press Insert to choose the upscaler.` }
+        : { ok: false, text: res.message };
+    } else if (!res.ok) alert(res.message);
+    loadOpti(false);
+  });
+  api.on('opti:changed', () => loadOpti(false));
+  setInterval(() => { if (!document.hidden && $('.page[data-page="optiscaler"]').classList.contains('active')) loadOpti(false); }, 4000);
+
   // ---------------------------------------------------------------- general
   const bl = $('#blocklist');
   bl.addEventListener('input', debounce(() => set('blocklist', bl.value.split(/\r?\n/).map((s) => s.trim().toLowerCase()).filter(Boolean)), 400));
@@ -316,7 +424,7 @@
   });
 
   // ---------------------------------------------------------------- components
-  const COMP_GLYPH = { presentmon: 'PM', rtss: 'RT' };
+  const COMP_GLYPH = { presentmon: 'PM', rtss: 'RT', optiscaler: 'OS' };
   const ACTION_LABEL = { install: 'Install', update: 'Update', start: 'Start RTSS', page: 'Open download page' };
   let comps = [];
   let compChecking = false;
@@ -326,7 +434,8 @@
     if (c.busy) t.push(['busy', c.busy === 'updating' ? 'Updating' : c.busy === 'installing' ? 'Installing' : 'Working']);
     else if (!c.installed) t.push([c.required ? 'bad' : '', c.required ? 'Required · not installed' : 'Not installed']);
     else {
-      t.push(['ok', `Installed${c.version ? ` · v${c.version}` : ''}`]);
+      t.push(['ok', `${c.id === 'optiscaler' ? 'Downloaded' : 'Installed'}${c.version ? ` · v${c.version}` : ''}`]);
+      if (c.id === 'optiscaler') t.push([c.inUse ? 'ok' : '', c.inUse ? `In ${c.inUse} game${c.inUse > 1 ? 's' : ''}` : 'Not in any game yet']);
       if (c.id === 'presentmon') t.push(c.running ? ['ok', 'Capturing'] : c.state === 'denied' ? ['bad', 'Needs permission'] : ['warn', c.state]);
       if (c.id === 'rtss') t.push(c.running ? ['ok', 'Running'] : ['warn', 'Not running']);
       if (c.updateAvailable) t.push(['warn', `Update · v${c.latest}`]);
@@ -341,7 +450,8 @@
     if (c.installed && c.updateAvailable && c.canInstall) a.push(['update', '']);
     if (c.id === 'rtss' && c.installed && !c.running) a.push(['start', c.updateAvailable ? 'ghost' : '']);
     if (c.id === 'rtss' && !c.installed && c.canInstall) a.push(['page', 'ghost']);
-    return a.map(([act, cls]) => `<button class="btn ${cls}" data-comp="${c.id}" data-act="${act}" ${c.busy ? 'disabled' : ''}>${ACTION_LABEL[act]}</button>`).join('');
+    const btns = a.map(([act, cls]) => `<button class="btn ${cls}" data-comp="${c.id}" data-act="${act}" ${c.busy ? 'disabled' : ''}>${ACTION_LABEL[act]}</button>`).join('');
+    return btns + (c.manage ? '<button class="btn ghost" data-goto="optiscaler">Manage per game</button>' : '');
   }
 
   function renderComps() {

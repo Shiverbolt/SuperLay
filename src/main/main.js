@@ -12,6 +12,7 @@ const { ThemeStore, identify, presetTheme, customTheme, PRESETS } = require('./t
 const { makeIcon } = require('./icon');
 const rtss = require('./rtss');
 const { Components } = require('./components');
+const { OptiScaler } = require('./optiscaler');
 
 app.setAppUserModelId('app.superlay');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -24,7 +25,7 @@ const PRELOAD = path.join(__dirname, '..', 'preload');
 const LAYOUTS = ['pill', 'card', 'minimal'];
 const PANEL_MARGIN = 14; // matches --margin in overlay.css
 
-let settings, themes, helper, pm, detector, components;
+let settings, themes, helper, pm, detector, components, opti;
 let overlayWin = null, settingsWin = null, tray = null;
 let loopTimer = null;
 let hotkeyFailures = [];
@@ -126,7 +127,12 @@ async function setTarget(pid, appName, title) {
   state.rtss.checkedAt = 0;
   pm.resetGraph(pid);
 
-  const info = (await helper.procInfo(pid)) || {};
+  // A hung or just-starting process can fail the path query; retry briefly before giving up.
+  let info = (await helper.procInfo(pid)) || {};
+  for (let i = 0; i < 3 && !info.path && state.target === t; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    info = (await helper.procInfo(pid)) || {};
+  }
   if (state.target !== t) return;
   t.info = info;
   t.game = identify({ ...info, title, app: appName });
@@ -138,7 +144,9 @@ async function setTarget(pid, appName, title) {
   const cached = themes.get(t.game.key);
   if (cached) { t.entry = cached; themes.touch(t.game.key); }
   pushConfig();
-  if (!cached || !cached.theme) {
+  // Without an exe path there's no stable identity, so don't create a game entry (it would be named
+  // after a window title such as "Client (Not Responding)").
+  if ((!cached || !cached.theme) && info.path) {
     themes.resolve(t.game, { online: settings.get().theme.onlineLookup }).then((entry) => {
       if (state.target === t) { t.entry = entry; pushConfig(); }
       sendSettings('games:changed');
@@ -203,7 +211,7 @@ function computeFrame() {
   overlayWin.webContents.send('overlay:frame', {
     fps,
     limiter: cap ? { limit: cap.limit, mode: cap.mode } : null,
-    upscaler: det?.upscaler ? { label: det.upscaler.label, model: det.upscaler.model, confidence: det.upscaler.confidence } : null,
+    upscaler: det?.upscaler ? { label: det.upscaler.label, model: det.upscaler.model, confidence: det.upscaler.confidence, opti: !!det.optiscaler } : null,
     gpu: tick.gpu || null,
     cpu: tick.cpu,
     ram: tick.ramTotal ? { used: tick.ramUsed, total: tick.ramTotal } : null,
@@ -361,6 +369,63 @@ async function rtssApply(exe, limit, mode) {
   return { ...res, profile: rtss.readProfile(state.rtss.install.dir, exe) };
 }
 
+// ------------------------------------------------------------------ OptiScaler
+function gpuVendor() {
+  const n = helper.last?.gpu?.name || '';
+  return /nvidia|geforce|rtx|gtx/i.test(n) ? 'nvidia' : /amd|radeon/i.test(n) ? 'amd' : /intel|arc/i.test(n) ? 'intel' : '';
+}
+
+function knownGames() {
+  const list = themes.list().filter((g) => g.exe && fs.existsSync(g.exe)).map((g) => ({ key: g.key, name: g.name, exe: g.exe, thumb: g.thumb }));
+  const t = state.target;
+  if (t?.game?.key && t.info?.path && !list.some((g) => g.key === t.game.key)) {
+    list.unshift({ key: t.game.key, name: t.entry?.name || t.game.name, exe: t.info.path, thumb: t.entry?.thumb });
+  }
+  return list;
+}
+
+async function optiStatus({ checkUpdates = false } = {}) {
+  const cached = opti.cachedPackage();
+  const latest = checkUpdates ? await opti.latest(false) : opti.latestInfo;
+  const games = await Promise.all(knownGames().map(async (g) => {
+    let status;
+    try { status = await opti.gameStatus(g); } catch (e) { status = { state: 'error', error: e.message }; }
+    const running = state.target?.info?.path?.toLowerCase() === g.exe.toLowerCase();
+    return { ...g, running, ...status, busy: opti.busy[g.key] || null };
+  }));
+  return {
+    package: { version: cached?.version || '', latest: latest?.version || '', updateAvailable: !!(cached && latest?.version && latest.version !== cached.version), busy: opti.busy.package || null },
+    vendor: gpuVendor(),
+    rtssInstalled: !!state.rtss.install,
+    games,
+  };
+}
+
+async function optiAct(key, action, opts = {}) {
+  const busyKey = action === 'download' ? 'package' : key;
+  if (opti.busy[busyKey]) return { ok: false, message: 'Already in progress.' };
+  opti.busy[busyKey] = action;
+  sendSettings('opti:changed');
+  try {
+    if (action === 'download') return { ok: true, ...(await opti.downloadPackage()) };
+    const game = knownGames().find((g) => g.key === key);
+    if (!game) return { ok: false, message: 'Game not found.' };
+    if (action === 'folder') { await shell.openPath(path.dirname(game.exe)); return { ok: true }; }
+    let res;
+    if (action === 'install' || action === 'update') res = await opti.install(game, { proxy: opts.proxy || 'auto', vendor: gpuVendor(), allowAntiCheat: !!opts.allowAntiCheat });
+    else if (action === 'remove') res = await opti.uninstall(game);
+    else return { ok: false, message: 'Unknown action.' };
+    if (state.target?.game?.key === key) state.target.detection = null; // re-detect upscaler on next pass
+    return { ok: true, ...res };
+  } catch (e) {
+    return { ok: false, message: e.message };
+  } finally {
+    delete opti.busy[busyKey];
+    sendSettings('opti:changed');
+    sendSettings('components:changed');
+  }
+}
+
 // ------------------------------------------------------------------ hotkeys, tray
 function registerHotkeys() {
   globalShortcut.unregisterAll();
@@ -452,7 +517,9 @@ function setupIpc() {
 
   ipcMain.handle('diag:get', diagnostics);
   ipcMain.handle('components:status', (_e, opts) => components.status(opts || {}));
-  ipcMain.handle('components:act', (_e, id, action) => componentAct(id, action));
+  ipcMain.handle('components:act', (_e, id, action) => (id === 'optiscaler' ? optiAct(null, 'download') : componentAct(id, action)));
+  ipcMain.handle('opti:status', (_e, opts) => optiStatus(opts || {}));
+  ipcMain.handle('opti:act', (_e, key, action, opts) => optiAct(key, action, opts || {}));
   ipcMain.handle('pm:browse', async () => {
     const r = await dialog.showOpenDialog(settingsWin, { title: 'Locate PresentMon', filters: [{ name: 'PresentMon', extensions: ['exe'] }], properties: ['openFile'] });
     if (r.canceled || !r.filePaths[0]) return null;
@@ -481,9 +548,9 @@ async function captureShots(dir) {
   const shot = async (name) => fs.writeFileSync(path.join(dir, `${name}.png`), (await wc.capturePage()).toPNG());
   const original = settings.get().overlay.layout;
   // Diagnostics is left out on purpose: it shows local paths and running processes.
-  for (const page of ['home', 'overlay', 'metrics', 'themes', 'framegen', 'limiter', 'components', 'games']) {
+  for (const page of ['home', 'overlay', 'metrics', 'themes', 'framegen', 'limiter', 'optiscaler', 'components', 'games']) {
     await wc.executeJavaScript(`document.querySelector('#nav [data-page="${page}"]').click()`);
-    await wait(page === 'components' ? 9000 : 1500); // components checks GitHub and winget for updates
+    await wait(page === 'components' || page === 'optiscaler' ? 9000 : 1500); // these check GitHub/winget for updates
     await shot(page);
   }
   await wc.executeJavaScript(`document.querySelector('#nav [data-page="home"]').click()`);
@@ -506,8 +573,9 @@ app.whenReady().then(() => {
   helper = new Helper();
   pm = new PresentMon();
   detector = new Detector(helper);
+  opti = new OptiScaler({ net, dataDir, helper });
   components = new Components({
-    net, shell, settings, dataDir,
+    net, shell, settings, dataDir, opti,
     vendorDirs, pmStatus: () => pm.status, stopPresentMon: () => pm.stop(false),
   });
 

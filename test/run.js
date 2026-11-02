@@ -202,4 +202,127 @@ test('cap recommendation: VRR, driver FG, sustained fps', () => {
   assert.strictEqual(rtss.recommendCap({ refresh: 165, vrr: true, sustainedFps: 97.6 }).cap, 97);
 });
 
-console.log(`\n${passed} passed`);
+// ---------------------------------------------------------------- OptiScaler installer (fake game + package)
+const fsx = require('fs');
+const osx = require('os');
+const pathx = require('path');
+const { OptiScaler, findAntiCheat } = require('../src/main/optiscaler');
+
+function optiFixture() {
+  const root = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'sl-opti-'));
+  const data = pathx.join(root, 'data');
+  const pkg = pathx.join(data, 'optiscaler', 'packages', '0.9.4');
+  const w = (p, s) => { fsx.mkdirSync(pathx.dirname(p), { recursive: true }); fsx.writeFileSync(p, s); };
+  for (const [f, s] of Object.entries({
+    'OptiScaler.dll': 'OPTI', 'OptiScaler.ini': '[Spoofing]\nDxgi=auto\n', 'libxess.dll': 'XESS-OPTI', 'amd_fidelityfx_dx12.dll': 'FFX-OPTI',
+    'fakenvapi.dll': 'FNV', 'fakenvapi.ini': 'x', 'D3D12_Optiscaler/D3D12Core.dll': 'D3D', 'Licenses/XeSS_LICENSE.txt': 'L',
+    'setup_windows.bat': 'bat', '!! README_EXTRACT ALL FILES TO GAME FOLDER !!.txt': 'r',
+  })) w(pathx.join(pkg, f), s);
+  const game = pathx.join(root, 'steamapps', 'common', 'MyGame', 'Bin');
+  w(pathx.join(game, 'MyGame.exe'), 'EXE');
+  w(pathx.join(game, 'libxess.dll'), 'XESS-GAME');
+  const origs = {};
+  const helper = {
+    versions: async (paths) => ({ files: paths.map((p) => ({ path: p, version: '1.0', orig: origs[pathx.basename(p).toLowerCase()] || '' })) }),
+    mapped: async (paths) => ({ files: paths.map((p) => ({ path: p, state: 'idle' })) }),
+  };
+  const opti = new OptiScaler({ net: null, dataDir: data, helper });
+  const g = { key: 'k1', name: 'MyGame', exe: pathx.join(game, 'MyGame.exe') };
+  const read = (f) => fsx.readFileSync(pathx.join(game, f), 'utf8');
+  const has = (f) => fsx.existsSync(pathx.join(game, f));
+  return { root, game, g, opti, helper, origs, w, read, has, cleanup: () => fsx.rmSync(root, { recursive: true, force: true }) };
+}
+
+const asyncTests = [];
+const atest = (name, fn) => asyncTests.push([name, fn]);
+
+atest('OptiScaler: install backs up game files, uninstall restores exactly', async () => {
+  const t = optiFixture();
+  try {
+    const r = await t.opti.install(t.g, { vendor: 'amd' });
+    assert.strictEqual(r.proxy, 'dxgi.dll');
+    assert.deepStrictEqual(r.replaced, ['libxess.dll']);
+    assert.strictEqual(t.read('dxgi.dll'), 'OPTI');
+    assert.strictEqual(t.read('libxess.dll'), 'XESS-OPTI');
+    assert.ok(t.has('fakenvapi.dll'), 'fakenvapi installed for AMD');
+    assert.ok(!t.has('setup_windows.bat') && !t.has('OptiScaler.dll'), 'setup script skipped, dll renamed');
+    assert.strictEqual((await t.opti.gameStatus(t.g)).state, 'installed');
+    await t.opti.uninstall(t.g);
+    assert.strictEqual(t.read('libxess.dll'), 'XESS-GAME', 'original restored');
+    assert.deepStrictEqual(fsx.readdirSync(t.game).sort(), ['MyGame.exe', 'libxess.dll'], 'nothing left behind');
+    assert.strictEqual((await t.opti.gameStatus(t.g)).state, 'none');
+  } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: NVIDIA skips fakenvapi', async () => {
+  const t = optiFixture();
+  try { await t.opti.install(t.g, { vendor: 'nvidia' }); assert.ok(!t.has('fakenvapi.dll') && !t.has('fakenvapi.ini')); } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: a game update after install wins over the backup', async () => {
+  const t = optiFixture();
+  try {
+    await t.opti.install(t.g, { vendor: 'amd' });
+    t.w(pathx.join(t.game, 'libxess.dll'), 'XESS-GAME-V2');            // game patch replaced it
+    const r = await t.opti.uninstall(t.g);
+    assert.strictEqual(t.read('libxess.dll'), 'XESS-GAME-V2');
+    assert.deepStrictEqual(r.kept, ['libxess.dll']);
+  } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: Steam verify removing the proxy shows as damaged', async () => {
+  const t = optiFixture();
+  try {
+    await t.opti.install(t.g, { vendor: 'amd' });
+    fsx.rmSync(pathx.join(t.game, 'dxgi.dll'));
+    assert.strictEqual((await t.opti.gameStatus(t.g)).state, 'damaged');
+  } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: existing dxgi.dll (ReShade) is left alone, next name used', async () => {
+  const t = optiFixture();
+  try {
+    t.w(pathx.join(t.game, 'dxgi.dll'), 'RESHADE'); t.origs['dxgi.dll'] = 'ReShade64.dll';
+    const r = await t.opti.install(t.g, { vendor: 'amd' });
+    assert.strictEqual(r.proxy, 'winmm.dll');
+    assert.strictEqual(t.read('dxgi.dll'), 'RESHADE');
+    await assert.rejects(t.opti.install(t.g, { vendor: 'amd', proxy: 'dxgi.dll' }), /already exists/);
+  } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: anti-cheat blocks install unless explicitly allowed', async () => {
+  const t = optiFixture();
+  try {
+    t.w(pathx.join(t.game, 'AntiCheatExpert', 'ACE-Base64.dll'), 'ace');   // Wuthering Waves layout
+    await assert.rejects(t.opti.install(t.g, { vendor: 'amd' }), /ACE/);
+    assert.ok(!t.has('dxgi.dll'));
+    await t.opti.install(t.g, { vendor: 'amd', allowAntiCheat: true });
+    assert.ok(t.has('dxgi.dll'));
+  } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: running game blocks install; manual installs are recognised', async () => {
+  const t = optiFixture();
+  try {
+    t.helper.mapped = async (paths) => ({ files: paths.map((p) => ({ path: p, state: 'loaded' })) });
+    await assert.rejects(t.opti.install(t.g, { vendor: 'amd' }), /Close the game/);
+    t.w(pathx.join(t.game, 'winmm.dll'), 'OPTI-MANUAL'); t.origs['winmm.dll'] = 'OptiScaler.dll';
+    const s = await t.opti.gameStatus(t.g);
+    assert.strictEqual(s.state, 'manual');
+    assert.strictEqual(s.proxy, 'winmm.dll');
+  } finally { t.cleanup(); }
+});
+
+test('anti-cheat signatures', () => {
+  const root = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'sl-ac-'));
+  try {
+    fsx.mkdirSync(pathx.join(root, 'EasyAntiCheat'), { recursive: true });
+    fsx.writeFileSync(pathx.join(root, 'BEService_x64.exe'), '');
+    assert.deepStrictEqual(findAntiCheat(root).sort(), ['BattlEye', 'Easy Anti-Cheat']);
+  } finally { fsx.rmSync(root, { recursive: true, force: true }); }
+});
+
+(async () => {
+  for (const [name, fn] of asyncTests) { await fn(); passed++; console.log(`  ✓ ${name}`); }
+  console.log(`\n${passed} passed`);
+})().catch((e) => { console.error(e); process.exit(1); });
