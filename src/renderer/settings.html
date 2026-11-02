@@ -93,11 +93,18 @@
         <div class="group grid2" id="metricToggles"></div>
         <h2>Statistics</h2>
         <div class="group">
+          <div class="field">
+            <div class="label">Frame-time source <small class="muted">(graph, 1% low and pacing)</small></div>
+            <div class="seg" data-seg="stats.frametimeSource">
+              <button data-v="present">Game (like RTSS)</button><button data-v="display">Display</button>
+            </div>
+            <small class="muted">Game: time between the frames the game submits, which is what a frame cap flattens. Display: when each frame reached the screen; under v-sync this snaps to refresh steps and looks jumpier even when delivery is smooth. Driver frame generation (AFMF) always uses display timing.</small>
+          </div>
           <div class="slider"><label>FPS averaging window</label><input type="range" min="250" max="3000" step="250" data-bind="stats.fpsWindowMs"><output data-fmt="ms"></output></div>
           <div class="slider"><label>1% low window</label><input type="range" min="3" max="60" step="1" data-bind="stats.lowWindowSec"><output data-fmt="s"></output></div>
           <div class="slider"><label>Graph span</label><input type="range" min="2" max="15" step="1" data-bind="stats.graphSeconds"><output data-fmt="s"></output></div>
         </div>
-        <p class="note">FPS and frame time come from frames that actually reached the display, not from presents. 1% low is the 99th-percentile displayed frame time over the window.</p>
+        <p class="note">FPS counts frames that actually reached the display, so frame generation is counted correctly. 1% low is the 99th-percentile frame time over its window, using the frame-time source above.</p>
       </section>
 
       <!-- ================================================= themes -->
@@ -205,7 +212,7 @@
             <label class="toggle-row"><span>Display uses VRR (FreeSync / G-Sync)<small>Recommendations stay a few fps under the refresh rate</small></span><input type="checkbox" data-bind="limiter.vrr"><i class="sw"></i></label>
             <label class="toggle-row"><span>Show cap target on the frame-time graph</span><input type="checkbox" data-bind="limiter.showTargetLine"><i class="sw"></i></label>
           </div>
-          <p class="note">SuperLay sets caps through RTSS's own profile API, the same one MSI Afterburner uses; RTSS does the in-game limiting. RTSS keeps its profiles under Program Files, so applying asks for administrator permission unless SuperLay already runs as admin. Changes take effect immediately, even mid-game. Turn on <b>Pacing</b> in Metrics to see how steady frames are under the cap.</p>
+          <p class="note">SuperLay sets caps through RTSS's own profile API, the same one MSI Afterburner uses; RTSS does the in-game limiting. RTSS keeps its profiles under Program Files, so the first cap each session asks for administrator permission once (never, if SuperLay runs as admin); a small helper then stays running until SuperLay closes, and it can only change RTSS frame caps. Changes take effect immediately, even mid-game. Turn on <b>Pacing</b> in Metrics to see how steady frames are under the cap.</p>
         </div>
       </section>
 

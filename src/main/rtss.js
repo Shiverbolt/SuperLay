@@ -2,11 +2,12 @@
 // RivaTuner Statistics Server integration: reads and sets per-game frame-rate caps.
 // RTSS does the in-game hooking (and is tolerated by most anti-cheats); SuperLay only edits its profiles.
 const fs = require('fs');
-const os = require('os');
+const net = require('net');
 const path = require('path');
-const { execFile } = require('child_process');
+const crypto = require('crypto');
+const { execFile, spawn } = require('child_process');
 
-const APPLY_SCRIPT = path.join(__dirname, 'rtss-apply.ps1').replace('app.asar', 'app.asar.unpacked');
+const BROKER_SCRIPT = path.join(__dirname, 'rtss-broker.ps1').replace('app.asar', 'app.asar.unpacked');
 
 // RTSS's SyncLimiter values, in the order of its "Framerate limiter" setting.
 const MODES = { 0: 'async', 1: 'front-edge', 2: 'back-edge' };
@@ -56,33 +57,75 @@ function readProfile(dir, exeName) {
   return { limit: 0, raw: 0, denominator: 1, mode: 'async', modeId: 0, source: 'none' };
 }
 
+// ---------------------------------------------------------------- elevated broker
+// One elevated helper per SuperLay session (one UAC prompt), reached over a named pipe locked to this
+// user and a random token. It exits when SuperLay does. See rtss-broker.ps1.
+const broker = { pipe: null, token: null, starting: null };
+
+function pipeRequest(line, timeoutMs = 10000) {
+  return new Promise((resolve) => {
+    let buf = '', done = false;
+    const finish = (v) => { if (!done) { done = true; clearTimeout(timer); sock.destroy(); resolve(v); } };
+    const sock = net.connect(`\\\\.\\pipe\\${broker.pipe}`);
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    sock.on('connect', () => { if (line === null) finish('connected'); else sock.write(`${line}\n`); });
+    sock.on('data', (d) => { buf += d; const nl = buf.indexOf('\n'); if (nl >= 0) finish(buf.slice(0, nl).trim()); });
+    sock.on('error', () => finish(null));
+  });
+}
+
+async function startBroker(dir, elevated) {
+  broker.pipe = `SuperLay-RTSS-${crypto.randomBytes(8).toString('hex')}`;
+  broker.token = crypto.randomBytes(24).toString('hex');
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
+  // -EncodedCommand sidesteps Start-Process's unquoted -ArgumentList joining (paths with spaces).
+  const inner = `& ${q(BROKER_SCRIPT)} -Dll ${q(path.join(dir, 'RTSSHooks64.dll'))} -Pipe ${q(broker.pipe)} -Token ${q(broker.token)} -ParentPid ${process.pid}`;
+  const psArgs = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(inner, 'utf16le').toString('base64')];
+
+  if (elevated) {
+    spawn('powershell.exe', psArgs, { windowsHide: true, stdio: 'ignore' });
+  } else {
+    const outer = `Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -ArgumentList ${psArgs.map(q).join(',')}`;
+    const r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', outer], 120000);
+    if (r.err) {
+      broker.pipe = null;
+      return { ok: false, message: /cancel/i.test(r.stderr) ? 'Administrator permission was declined.' : (r.stderr.trim().split(/\r?\n/)[0] || 'Could not start the RTSS helper.') };
+    }
+  }
+  for (let i = 0; i < 60; i++) {           // the broker needs a moment to compile and open its pipe
+    if (await pipeRequest(null, 500)) return { ok: true };
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  broker.pipe = null;
+  return { ok: false, message: 'The RTSS helper did not start.' };
+}
+
+async function ensureBroker(dir, elevated) {
+  if (broker.pipe && await pipeRequest(null, 1000)) return { ok: true };
+  if (!broker.starting) broker.starting = startBroker(dir, elevated).finally(() => { broker.starting = null; });
+  return broker.starting;
+}
+
+/** True once the elevated helper is running, i.e. caps apply without another prompt. */
+function brokerReady() { return !!broker.pipe; }
+
 /**
- * Writes a cap through RTSS's API. Needs admin; when SuperLay isn't elevated this triggers one UAC prompt.
+ * Writes a cap through RTSS's API via the broker. The first call per session asks for admin
+ * (unless SuperLay is already elevated); later calls are silent.
  * limit 0 removes the cap. Fractional limits (e.g. 59.94) use RTSS's denominator.
  */
 async function applyCap(dir, exeName, { limit, mode }, elevated) {
   const den = Number.isInteger(limit) ? 1 : 100;
-  const resultFile = path.join(os.tmpdir(), `superlay-rtss-${process.pid}-${Date.now()}.json`);
-  const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
-  const inner = `& ${q(APPLY_SCRIPT)} -Dll ${q(path.join(dir, 'RTSSHooks64.dll'))} -ProfileName ${q(exeName)} `
-    + `-Limit ${Math.round(limit * den)} -Denominator ${den} -Mode ${MODE_IDS[mode] ?? -1} -Result ${q(resultFile)}`;
-  const encoded = Buffer.from(inner, 'utf16le').toString('base64');
-  const psArgs = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded];
-
-  let r;
-  if (elevated) {
-    r = await run('powershell.exe', psArgs, 30000);
-  } else {
-    const outer = `$p = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList ${psArgs.map(q).join(',')}; exit $p.ExitCode`;
-    r = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', outer], 120000);
+  const line = () => `${broker.token}|${exeName}|${Math.round(limit * den)}|${den}|${MODE_IDS[mode] ?? -1}`;
+  let reply = null;
+  for (let attempt = 0; attempt < 2 && !reply; attempt++) {
+    const b = await ensureBroker(dir, elevated);
+    if (!b.ok) return b;
+    reply = await pipeRequest(line());
+    if (!reply) broker.pipe = null;        // broker died (killed, sign-out...): start a new one once
   }
-  let res = null;
-  try { res = JSON.parse(fs.readFileSync(resultFile, 'utf8').replace(/^﻿/, '')); fs.unlinkSync(resultFile); } catch { /* no result */ }
-  if (!res) {
-    if (/cancel/i.test(r.stderr)) return { ok: false, message: 'Administrator permission was declined.' };
-    return { ok: false, message: (r.stderr || r.err?.message || 'RTSS update failed.').trim().split(/\r?\n/)[0] };
-  }
-  if (!res.ok) return res;
+  if (!reply) return { ok: false, message: 'Lost contact with the RTSS helper.' };
+  if (reply !== 'ok') return { ok: false, message: reply.replace(/^err\s*/, '') };
   // Trust the file, not RTSS's return codes.
   const now = readProfile(dir, exeName);
   const modeOk = MODE_IDS[mode] === undefined || now.modeId === MODE_IDS[mode];
@@ -123,4 +166,4 @@ function recommendCap({ refresh, vrr = true, sustainedFps = 0, fg = null }) {
   return { cap, reasons };
 }
 
-module.exports = { locate, isRunning, readProfile, applyCap, recommendCap, parseFramerate, MODES };
+module.exports = { locate, isRunning, readProfile, applyCap, brokerReady, recommendCap, parseFramerate, MODES };

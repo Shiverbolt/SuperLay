@@ -224,7 +224,7 @@ class PresentMon extends EventEmitter {
    * fgHint: { library: 'DLSS FG'|..., loaded: bool } from module detection.
    * multiplierSetting: 'auto' | 'off' | '2' | '3' | '4'
    */
-  stats(pid, { fpsWindowMs = 1000, lowWindowSec = 10, fgHint = null, multiplierSetting = 'auto' } = {}) {
+  stats(pid, { fpsWindowMs = 1000, lowWindowSec = 10, fgHint = null, multiplierSetting = 'auto', frametimeSource = 'present' } = {}) {
     const ch = this.mainChain(pid);
     if (!ch || !ch.rows.length) return null;
     const rows = ch.rows;
@@ -285,15 +285,20 @@ class PresentMon extends EventEmitter {
     const fgActive = multiplier > 1.25;
     if (!fgActive) { renderedFps = displayedFps; multiplier = 1; if (source !== 'none') source = 'none'; }
 
-    // ---- 1% low + graph from displayed frame times ----
+    // ---- frame times for the graph, 1% low and pacing ----
+    // 'present' (default) is present-to-present, what RTSS shows and what a frame cap flattens. Display-change
+    // times snap to refresh steps under v-sync/composition and jitter even when delivery is smooth.
+    // Driver frame gen (AFMF) never passes through the game's presents, so it always uses display times.
+    const ftSource = frametimeSource === 'present' && genN === 0 ? 'present' : (anyDisplay ? 'display' : 'present');
+    const ftOf = (r) => (ftSource === 'present' ? r.between : r.display);
     const lowFrom = now - lowWindowSec * 1000;
     const times = [];
     for (let i = rows.length - 1; i >= 0 && rows[i].t > lowFrom; i--) {
       const r = rows[i];
-      const v = anyDisplay ? r.display : r.between;
+      const v = ftOf(r);
       if (v !== null && v > 0 && r.type.toLowerCase() !== 'repeated') times.push(v);
     }
-    // Pacing: mean frame-to-frame change in displayed frame time. Steady pacing → near 0 even at low FPS.
+    // Pacing: mean frame-to-frame change in frame time. Steady pacing → near 0 even at low FPS.
     let jitter = 0;
     for (let i = 1; i < times.length; i++) jitter += Math.abs(times[i] - times[i - 1]);
     const pacingMs = times.length > 1 ? jitter / (times.length - 1) : null;
@@ -306,7 +311,7 @@ class PresentMon extends EventEmitter {
     const frames = [];
     for (let i = rows.length - 1; i >= 0 && rows[i].t > since; i--) {
       const r = rows[i];
-      const v = anyDisplay ? r.display : r.between;
+      const v = ftOf(r);
       if (v !== null && v > 0) frames.push([r.t, +v.toFixed(2)]);
     }
     frames.reverse();
@@ -327,6 +332,7 @@ class PresentMon extends EventEmitter {
       latencyMs: latN ? latSum / latN : null,
       pacingMs,
       fg: { active: fgActive, multiplier: +multiplier.toFixed(2), source, name: fgName },
+      frametimeSource: ftSource,
       frameTypeColumn: anyType,
       displayTracked: anyDisplay,
       frames,

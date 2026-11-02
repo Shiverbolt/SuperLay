@@ -235,7 +235,8 @@
     $('#rtssPip').className = `pip ${r.installed && r.running ? 'ok' : r.installed ? 'warn' : 'bad'}`;
     $('#rtssText').textContent = !r.installed
       ? 'RTSS isn\'t installed. It\'s free; SuperLay uses it to cap frame rates inside the game.'
-      : `Version ${r.version}${r.running ? ', running.' : ' — installed but not running. Start RTSS for caps to take effect.'}${r.elevated ? '' : ' Applying a cap will ask for administrator permission.'}`;
+      : `Version ${r.version}${r.running ? ', running.' : ' — installed but not running. Start RTSS for caps to take effect.'}`
+        + (r.elevated || r.brokerReady ? ' Caps apply instantly.' : ' The first cap you apply this session asks for administrator permission once; after that they apply instantly.');
     const btns = r.installed ? '' : '<button class="btn" data-a="get">Get RTSS</button>';
     if ($('#rtssBtns').dataset.h !== btns) { $('#rtssBtns').innerHTML = btns; $('#rtssBtns').dataset.h = btns; }
     $('#limiterBody').style.display = r.installed ? '' : 'none';
@@ -273,7 +274,7 @@
     if (!limiterExe) return;
     const btn = limit === 0 ? $('#capRemove') : $('#capApply');
     const msg = $('#capMsg');
-    msg.className = 'note'; msg.textContent = lastRtss?.elevated ? 'Applying…' : 'Approve the Windows permission prompt to apply…';
+    msg.className = 'note'; msg.textContent = lastRtss?.elevated || lastRtss?.brokerReady ? 'Applying…' : 'Approve the Windows permission prompt (once per session)…';
     btn.disabled = true;
     try {
       const res = await api.rtssApply({ exe: limiterExe, limit, mode: limiterMode });

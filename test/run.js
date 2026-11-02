@@ -152,6 +152,30 @@ test('pacing: steady frames ≈ 0, alternating frames show jitter', () => {
   near(s.pacingMs, 8, 0.05, 'jitter');
 });
 
+test('frame-time source: capped game is steady at present, quantized at display (Forza capture)', () => {
+  // 90 fps cap on a 180 Hz display: presents every ~11.1 ms, display changes snap to 5.55 / 11.1 / 16.7 ms.
+  const mk = () => {
+    const pm = new PresentMon(); const rows = []; let t = 0;
+    const disp = [11.11, 11.11, 5.55, 16.67, 11.11, 11.11, 16.67, 5.55];
+    for (let i = 0; i < 900; i++) { t += 11.11; rows.push({ t, between: 11.11 + (i % 3 - 1) * 0.05, display: disp[i % disp.length] }); }
+    feed(pm, rows); return pm;
+  };
+  const p = mk().stats(100, { frametimeSource: 'present' });
+  const d = mk().stats(100, { frametimeSource: 'display' });
+  assert.strictEqual(p.frametimeSource, 'present');
+  assert.ok(p.pacingMs < 0.1, `present pacing ${p.pacingMs}`);
+  assert.ok(d.pacingMs > 3, `display pacing ${d.pacingMs}`);
+  near(p.low1Fps, 90, 1, 'present 1% low stays at the cap');
+  near(p.displayedFps, d.displayedFps, 0.01, 'FPS is display-based either way');
+});
+
+test('frame-time source: driver FG forces display timing', () => {
+  const pm = new PresentMon(); const ft = 1000 / 240, rows = [];
+  for (let i = 0; i < 1000; i++) rows.push({ t: i * ft, type: i % 2 ? 'AMD_AFMF' : 'Application', between: i % 2 ? 0 : ft * 2, display: ft });
+  feed(pm, rows);
+  assert.strictEqual(pm.stats(100, { frametimeSource: 'present' }).frametimeSource, 'display');
+});
+
 const rtss = require('../src/main/rtss');
 test('RTSS profile parsing (real Forza profile shape)', () => {
   const p = rtss.parseFramerate('[OSD]\nEnableOSD=1\n[Framerate]\nLimit=5994\nLimitDenominator=100\nLimitTime=0\nSyncLimiter=1\n[Hooking]\nEnableHooking=1\n');

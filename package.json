@@ -38,7 +38,7 @@
     ],
     "asarUnpack": [
       "src/main/helper.ps1",
-      "src/main/rtss-apply.ps1"
+      "src/main/rtss-broker.ps1"
     ],
     "win": {
       "target": [

@@ -165,6 +165,7 @@ function computeFrame() {
     const fgHint = fgDet ? { library: fgDet.label, loaded: fgDet.state !== 'idle' } : null;
     fps = pm.stats(t.pid, {
       fpsWindowMs: S.stats.fpsWindowMs, lowWindowSec: S.stats.lowWindowSec, fgHint, multiplierSetting: S.framegen.inGameMultiplier,
+      frametimeSource: S.stats.frametimeSource,
     });
     // Lossless Scaling presents its own window: its rate is what you see, the game's is what's rendered.
     if (fps && S.framegen.detectLosslessScaling) {
@@ -353,6 +354,7 @@ async function rtssStatus(exeOverride) {
     version: R.install?.version || '',
     running: R.running,
     elevated: !!helper.last?.admin,
+    brokerReady: rtss.brokerReady(),
     exe,
     isCurrentGame: !!exe && exe === exeOf(state.target),
     profile: R.install && exe ? rtss.readProfile(R.install.dir, exe) : null,

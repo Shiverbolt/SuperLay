@@ -44,6 +44,7 @@ const DEFAULTS = {
     fpsWindowMs: 1000,
     lowWindowSec: 10,
     graphSeconds: 5,
+    frametimeSource: 'present', // present (like RTSS) | display
   },
   theme: {
     mode: 'auto',              // auto (cover art) | preset | custom
