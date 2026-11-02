@@ -106,6 +106,7 @@ body {
 .up-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .up-chip.installed .dot { background: transparent; box-shadow: 0 0 0 1.5px var(--muted) inset; }
 .up-chip .model { font-weight: 500; color: var(--muted); letter-spacing: 0; display: none; }
+.cap-chip { color: var(--accent2); box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent2) 45%, transparent) inset; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chips:not(:has(.chip:not([hidden]))) { display: none; }
 

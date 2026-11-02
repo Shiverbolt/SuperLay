@@ -37,7 +37,8 @@
       "package.json"
     ],
     "asarUnpack": [
-      "src/main/helper.ps1"
+      "src/main/helper.ps1",
+      "src/main/rtss-apply.ps1"
     ],
     "win": {
       "target": [

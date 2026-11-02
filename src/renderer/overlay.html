@@ -31,6 +31,7 @@
           <div class="stat" data-m="frametime"><label>FT</label><b id="ft">0</b><i>ms</i></div>
           <div class="stat" data-m="low1"><label>1% low</label><b id="low1">0</b></div>
           <div class="stat" data-m="latency"><label>Lat</label><b id="lat">–</b><i>ms</i></div>
+          <div class="stat" data-m="pacing" title="Average change between consecutive frame times. Lower is smoother."><label>Pacing</label><b id="pacing">–</b><i>ms</i></div>
           <div class="stat meter" data-m="gpuLoad"><label>GPU</label><b id="gpu">0</b><i>%</i><span class="track"><span class="fill" id="gpuBar"></span></span></div>
           <div class="stat" data-m="gpuTemp"><label>Temp</label><b id="gpuTemp">–</b><i>°C</i></div>
           <div class="stat" data-m="gpuClock"><label>Clock</label><b id="gpuClock">–</b><i>MHz</i></div>
@@ -43,6 +44,7 @@
         <div class="chips" id="chips">
           <span class="chip up-chip" id="upChip" data-m="upscaler" hidden><span class="dot"></span><span id="upLabel"></span><span class="model" id="upModel"></span></span>
           <span class="chip fgname-chip" id="fgNameChip" data-m="framegen" hidden></span>
+          <span class="chip cap-chip" id="capChip" data-m="limiter" hidden></span>
         </div>
       </div>
     </div>

@@ -19,6 +19,7 @@
     $$('#nav button').forEach((x) => x.classList.toggle('active', x === b));
     $$('.page').forEach((p) => p.classList.toggle('active', p.dataset.page === b.dataset.page));
     if (b.dataset.page === 'games') loadGames();
+    if (b.dataset.page === 'limiter') { limiterDirty = false; loadLimiter(); }
     $$('.seg, .layout-pick, .pos-pick').forEach(placeThumb);
   }));
 
@@ -84,6 +85,8 @@
     ['graph', 'Frame-time graph', 'With stutter markers'],
     ['low1', '1% low', ''],
     ['latency', 'PC latency', 'Needs Reflex/PCL markers from the game'],
+    ['pacing', 'Pacing', 'Average frame-to-frame change; lower is smoother'],
+    ['limiter', 'Frame cap', 'RTSS cap and limiter mode'],
     ['upscaler', 'Upscaler', 'DLSS / FSR / XeSS and version'],
     ['gpuLoad', 'GPU load', ''],
     ['gpuTemp', 'GPU temperature', ''],
@@ -201,6 +204,92 @@
     if (!mods.length && !/^F\d+$/.test(key)) { b.textContent = 'Add Ctrl, Alt or Shift…'; return; }
     stop([...mods, key].join('+'));
   });
+
+  // ---------------------------------------------------------------- frame limiter (RTSS)
+  const MODE_NAMES = { async: 'async', 'front-edge': 'front edge sync', 'back-edge': 'back edge sync' };
+  const MODE_HELP = {
+    async: 'RTSS\'s default: limits independently of the frame\'s timing.',
+    'front-edge': 'Waits at the start of the frame, so each frame begins on a fixed beat. Usually the steadiest frame times.',
+    'back-edge': 'Waits right before the frame is presented. An alternative if front edge sync misbehaves in a game.',
+  };
+  let limiterDirty = false;     // user has edited the cap/mode; don't overwrite with live values
+  let limiterMode = 'front-edge';
+  let limiterExe = null;
+  let lastRtss = null;
+
+  function setMode(m) {
+    limiterMode = m;
+    $$('#capMode button').forEach((b) => b.classList.toggle('on', b.dataset.v === m));
+    placeThumb($('#capMode'));
+    $('#modeHelp').textContent = MODE_HELP[m] || '';
+  }
+  { const t = document.createElement('span'); t.className = 'thumb'; $('#capMode').prepend(t); }
+  $$('#capMode button').forEach((b) => b.addEventListener('click', () => { limiterDirty = true; setMode(b.dataset.v); }));
+  $('#capVal').addEventListener('input', () => { limiterDirty = true; });
+  $('#limGame').addEventListener('change', (e) => { limiterExe = e.target.value; limiterDirty = false; loadLimiter(); });
+  $('#recUse').addEventListener('click', () => { if (lastRtss?.recommendation?.cap) { $('#capVal').value = lastRtss.recommendation.cap; limiterDirty = true; } });
+
+  async function loadLimiter() {
+    const r = await api.rtssStatus(limiterExe);
+    lastRtss = r;
+    $('#rtssPip').className = `pip ${r.installed && r.running ? 'ok' : r.installed ? 'warn' : 'bad'}`;
+    $('#rtssText').textContent = !r.installed
+      ? 'RTSS isn\'t installed. It\'s free; SuperLay uses it to cap frame rates inside the game.'
+      : `Version ${r.version}${r.running ? ', running.' : ' — installed but not running. Start RTSS for caps to take effect.'}${r.elevated ? '' : ' Applying a cap will ask for administrator permission.'}`;
+    const btns = r.installed ? '' : '<button class="btn" data-a="get">Get RTSS</button>';
+    if ($('#rtssBtns').dataset.h !== btns) { $('#rtssBtns').innerHTML = btns; $('#rtssBtns').dataset.h = btns; }
+    $('#limiterBody').style.display = r.installed ? '' : 'none';
+    if (!r.installed) return;
+
+    // game list: current game first, then known games
+    const games = [];
+    if (diag?.target && r.isCurrentGame !== undefined) {
+      const cur = diag.target.exe ? diag.target.exe.split('\\').pop() : null;
+      if (cur) games.push({ exe: cur, name: `${diag.target.name || cur} (running)` });
+    }
+    for (const g of r.games) if (!games.some((x) => x.exe.toLowerCase() === g.exe.toLowerCase())) games.push(g);
+    if (!limiterExe) limiterExe = r.exe || games[0]?.exe || null;
+    const opts = games.map((g) => `<option value="${esc(g.exe)}" ${g.exe === limiterExe ? 'selected' : ''}>${esc(g.name)} — ${esc(g.exe)}</option>`).join('')
+      || '<option value="">No games yet</option>';
+    if ($('#limGame').dataset.h !== opts) { $('#limGame').innerHTML = opts; $('#limGame').dataset.h = opts; }
+
+    const p = r.profile;
+    $('#capNow').innerHTML = !p ? '' : p.limit > 0
+      ? `Current cap: <b>${+p.limit.toFixed(2)} fps</b> · ${MODE_NAMES[p.mode] || p.mode}${p.source === 'global' ? ' <span class="muted">(from RTSS global profile)</span>' : ''}`
+      : `No cap set${p.source === 'global' ? ' (uses RTSS global profile)' : ''}.`;
+
+    const rec = r.recommendation || {};
+    $('#recCap').textContent = rec.cap ? rec.cap : '–';
+    $('#recWhy').innerHTML = (rec.reasons || []).map((x) => `<li>${esc(x)}</li>`).join('')
+      + (r.isCurrentGame ? '' : '<li>Run the game for a live recommendation based on its performance.</li>');
+
+    if (!limiterDirty) {
+      $('#capVal').value = p && p.limit > 0 ? +p.limit.toFixed(2) : (rec.cap || '');
+      setMode(p && p.limit > 0 && MODE_HELP[p.mode] ? p.mode : S.limiter.defaultMode);
+    }
+  }
+
+  async function applyCap(limit) {
+    if (!limiterExe) return;
+    const btn = limit === 0 ? $('#capRemove') : $('#capApply');
+    const msg = $('#capMsg');
+    msg.className = 'note'; msg.textContent = lastRtss?.elevated ? 'Applying…' : 'Approve the Windows permission prompt to apply…';
+    btn.disabled = true;
+    try {
+      const res = await api.rtssApply({ exe: limiterExe, limit, mode: limiterMode });
+      msg.className = `note ${res.ok ? 'ok' : 'err'}`;
+      msg.textContent = res.ok ? (limit === 0 ? `Cap removed for ${limiterExe}.` : `Capped ${limiterExe} at ${limit} fps (${MODE_NAMES[limiterMode]}).`) : res.message;
+      if (res.ok) { limiterDirty = false; await loadLimiter(); }
+    } finally { btn.disabled = false; }
+  }
+  $('#capApply').addEventListener('click', () => {
+    const v = +$('#capVal').value;
+    if (!(v >= 0) || v > 1000) { $('#capMsg').className = 'note err'; $('#capMsg').textContent = 'Enter a cap between 0 and 1000 fps.'; return; }
+    applyCap(Math.round(v * 100) / 100);
+  });
+  $('#capRemove').addEventListener('click', () => applyCap(0));
+  $('#rtssBtns').addEventListener('click', (e) => { if (e.target.closest('[data-a="get"]')) api.rtssDownload(); });
+  setInterval(() => { if (!document.hidden && $('.page[data-page="limiter"]').classList.contains('active')) loadLimiter(); }, 2000);
 
   // ---------------------------------------------------------------- general
   const bl = $('#blocklist');

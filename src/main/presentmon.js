@@ -293,6 +293,10 @@ class PresentMon extends EventEmitter {
       const v = anyDisplay ? r.display : r.between;
       if (v !== null && v > 0 && r.type.toLowerCase() !== 'repeated') times.push(v);
     }
+    // Pacing: mean frame-to-frame change in displayed frame time. Steady pacing → near 0 even at low FPS.
+    let jitter = 0;
+    for (let i = 1; i < times.length; i++) jitter += Math.abs(times[i] - times[i - 1]);
+    const pacingMs = times.length > 1 ? jitter / (times.length - 1) : null;
     times.sort((a, b) => a - b);
     const p99 = percentile(times, 0.99);
     const p999 = percentile(times, 0.999);
@@ -321,6 +325,7 @@ class PresentMon extends EventEmitter {
       low1Fps: p99 ? 1000 / p99 : 0,
       low01Fps: p999 ? 1000 / p999 : 0,
       latencyMs: latN ? latSum / latN : null,
+      pacingMs,
       fg: { active: fgActive, multiplier: +multiplier.toFixed(2), source, name: fgName },
       frameTypeColumn: anyType,
       displayTracked: anyDisplay,

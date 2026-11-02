@@ -175,6 +175,26 @@ textarea { margin: 10px 0 6px; resize: vertical; }
 .tag { display: inline-block; min-width: 116px; margin-right: 10px; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; text-align: center; color: #0d0d10; }
 .t1 { background: var(--good); } .t2 { background: #7fd3ff; } .t3 { background: var(--warn); } .t4 { background: #c9a6ff; } .t5 { background: var(--muted); }
 
+/* ---------------------------------------------------------------- frame limiter */
+#rtssCard { margin-bottom: 12px; }
+#limGame { min-width: 280px; }
+.cap-now { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+.cap-now b { color: var(--text); }
+.lim-grid { display: grid; grid-template-columns: 280px 1fr; gap: 12px; }
+.lim-grid .group { margin-bottom: 12px; }
+.rec { padding: 14px 16px; display: flex; flex-direction: column; }
+.rec-num { display: flex; align-items: baseline; gap: 6px; margin: 2px 0 8px; }
+.rec-num span { font: 700 40px/1 'Segoe UI Variable Display', 'Segoe UI', sans-serif; letter-spacing: -.02em; background: linear-gradient(120deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.rec-num small { color: var(--muted); font-size: 13px; }
+.rec-why { margin: 0 0 12px; padding-left: 16px; color: var(--muted); font-size: 12px; display: grid; gap: 4px; }
+.rec .btn { margin-top: auto; align-self: flex-start; }
+.cap-input { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.cap-input input { width: 120px; font-size: 18px; font-weight: 600; font-family: inherit; }
+input[type=number] { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 6px 10px; outline: none; }
+input[type=number]:focus { border-color: var(--accent); }
+#capMsg.ok { color: var(--good); }
+#capMsg.err { color: var(--bad); }
+
 /* ---------------------------------------------------------------- games */
 .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
 .game { display: flex; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; animation: pageIn 420ms var(--spring) both; }

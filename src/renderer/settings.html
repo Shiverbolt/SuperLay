@@ -19,6 +19,7 @@
       <button data-page="metrics"><span class="ic">≋</span>Metrics</button>
       <button data-page="themes"><span class="ic">◐</span>Themes</button>
       <button data-page="framegen"><span class="ic">⧉</span>Frame gen &amp; upscaling</button>
+      <button data-page="limiter"><span class="ic">◷</span>Frame limiter</button>
       <button data-page="games"><span class="ic">▤</span>Games</button>
       <button data-page="hotkeys"><span class="ic">⌘</span>Hotkeys</button>
       <button data-page="general"><span class="ic">⚙</span>General</button>
@@ -152,6 +153,60 @@
         </div>
         <h2>Upscaler detection</h2>
         <p class="note">SuperLay reads the libraries the game has loaded (DLSS, FSR 2/3/4, XeSS, OptiScaler) and their versions. Anti-cheat protected games block that, so SuperLay checks which of the game's own DLLs are mapped in memory instead. A filled dot means active; a hollow dot means shipped with the game but not confirmed. DLSS presets and AMD's driver-side FSR 4 upgrade aren't exposed to other apps, so they're labelled as capabilities, not facts.</p>
+      </section>
+
+      <!-- ================================================= frame limiter -->
+      <section class="page" data-page="limiter">
+        <h1>Frame limiter</h1>
+        <div class="status-card" id="rtssCard">
+          <div class="sc-head"><span class="pip" id="rtssPip"></span><b>RivaTuner Statistics Server</b></div>
+          <p id="rtssText">Checking…</p>
+          <div class="row-btns" id="rtssBtns"></div>
+        </div>
+
+        <div id="limiterBody">
+          <div class="group">
+            <div class="field">
+              <div class="label">Game</div>
+              <select id="limGame"></select>
+              <div class="cap-now" id="capNow"></div>
+            </div>
+          </div>
+
+          <div class="lim-grid">
+            <div class="group rec">
+              <div class="label">Recommended</div>
+              <div class="rec-num"><span id="recCap">–</span><small>fps</small></div>
+              <ul class="rec-why" id="recWhy"></ul>
+              <button class="btn ghost" id="recUse">Use this</button>
+            </div>
+            <div class="group">
+              <div class="field">
+                <div class="label">Cap</div>
+                <div class="cap-input"><input type="number" id="capVal" min="0" max="1000" step="0.01"><span class="muted">fps</span></div>
+                <small class="muted">0 removes the cap. Fractional values like 59.94 are supported.</small>
+              </div>
+              <div class="field">
+                <div class="label">Limiter mode</div>
+                <div class="seg" id="capMode">
+                  <button data-v="async">Async</button><button data-v="front-edge">Front edge sync</button><button data-v="back-edge">Back edge sync</button>
+                </div>
+                <small class="muted" id="modeHelp"></small>
+              </div>
+              <div class="row-btns">
+                <button class="btn" id="capApply">Apply to RTSS</button>
+                <button class="btn ghost" id="capRemove">Remove cap</button>
+              </div>
+              <p class="note" id="capMsg"></p>
+            </div>
+          </div>
+
+          <div class="group">
+            <label class="toggle-row"><span>Display uses VRR (FreeSync / G-Sync)<small>Recommendations stay a few fps under the refresh rate</small></span><input type="checkbox" data-bind="limiter.vrr"><i class="sw"></i></label>
+            <label class="toggle-row"><span>Show cap target on the frame-time graph</span><input type="checkbox" data-bind="limiter.showTargetLine"><i class="sw"></i></label>
+          </div>
+          <p class="note">SuperLay sets caps through RTSS's own profile API, the same one MSI Afterburner uses; RTSS does the in-game limiting. RTSS keeps its profiles under Program Files, so applying asks for administrator permission unless SuperLay already runs as admin. Changes take effect immediately, even mid-game. Turn on <b>Pacing</b> in Metrics to see how steady frames are under the cap.</p>
+        </div>
       </section>
 
       <!-- ================================================= games -->

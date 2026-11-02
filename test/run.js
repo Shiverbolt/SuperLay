@@ -137,4 +137,37 @@ test('PresentMon 2.6 CSV (TimeInMs) parses — real Forza Horizon 6 header', () 
   assert.strictEqual(pm.activeProcesses().size, 1);
 });
 
+test('pacing: steady frames ≈ 0, alternating frames show jitter', () => {
+  const steady = new PresentMon();
+  const rows = [];
+  for (let i = 0; i < 600; i++) rows.push({ t: i * 10, between: 10, display: 10 });
+  feed(steady, rows);
+  near(steady.stats(100).pacingMs, 0, 0.01, 'steady');
+  const uneven = new PresentMon();
+  const rows2 = []; let t = 0;
+  for (let i = 0; i < 600; i++) { const v = i % 2 ? 6 : 14; t += v; rows2.push({ t, between: v, display: v }); }
+  feed(uneven, rows2);
+  const s = uneven.stats(100);
+  near(s.displayedFps, 100, 0.5, 'same average fps');
+  near(s.pacingMs, 8, 0.05, 'jitter');
+});
+
+const rtss = require('../src/main/rtss');
+test('RTSS profile parsing (real Forza profile shape)', () => {
+  const p = rtss.parseFramerate('[OSD]\nEnableOSD=1\n[Framerate]\nLimit=5994\nLimitDenominator=100\nLimitTime=0\nSyncLimiter=1\n[Hooking]\nEnableHooking=1\n');
+  near(p.limit, 59.94, 0.001, 'limit');
+  assert.strictEqual(p.mode, 'front-edge');
+});
+
+test('cap recommendation: VRR, driver FG, sustained fps', () => {
+  assert.strictEqual(rtss.recommendCap({ refresh: 165, vrr: true }).cap, 162);
+  assert.strictEqual(rtss.recommendCap({ refresh: 144, vrr: true }).cap, 141);
+  assert.strictEqual(rtss.recommendCap({ refresh: 240, vrr: true }).cap, 237);
+  assert.strictEqual(rtss.recommendCap({ refresh: 60, vrr: false }).cap, 60);
+  // AFMF 2× on 165 Hz: base frames capped at 81 so output stays under 162
+  assert.strictEqual(rtss.recommendCap({ refresh: 165, vrr: true, fg: { active: true, multiplier: 2, source: 'frame-type', name: 'AFMF' } }).cap, 81);
+  // can only hold ~97 fps → cap at 97 instead of 162
+  assert.strictEqual(rtss.recommendCap({ refresh: 165, vrr: true, sustainedFps: 97.6 }).cap, 97);
+});
+
 console.log(`\n${passed} passed`);

@@ -10,6 +10,7 @@ const { Helper } = require('./helper');
 const { Detector } = require('./detect');
 const { ThemeStore, identify, presetTheme, customTheme, PRESETS } = require('./theme');
 const { makeIcon } = require('./icon');
+const rtss = require('./rtss');
 
 app.setAppUserModelId('app.superlay');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -36,6 +37,8 @@ const state = {
   shown: false,
   lastStats: null,
   helperStatus: { state: 'starting' },
+  fpsHistory: [],        // [{ t, displayed, rendered }] for the current target, last 30 s
+  rtss: { install: null, running: false, cap: null, checkedAt: 0 },
 };
 
 // ------------------------------------------------------------------ windows
@@ -85,7 +88,7 @@ function pushConfig() {
   if (!overlayWin) return;
   const S = settings.get();
   overlayWin.webContents.send('overlay:config', {
-    overlay: S.overlay, metrics: S.metrics, stats: S.stats, theme: S.theme, framegen: S.framegen,
+    overlay: S.overlay, metrics: S.metrics, stats: S.stats, theme: S.theme, framegen: S.framegen, limiter: S.limiter,
     palette: currentTheme(),
     cover: state.target?.entry?.thumb || null,
     gameName: state.target?.entry?.name || state.target?.game?.name || '',
@@ -118,6 +121,8 @@ async function setTarget(pid, appName, title) {
   if (!pid) { state.target = null; pushConfig(); return; }
   const t = { pid, app: appName, info: null, game: null, entry: null, detection: null, disabled: false };
   state.target = t;
+  state.fpsHistory = [];
+  state.rtss.checkedAt = 0;
   pm.resetGraph(pid);
 
   const info = (await helper.procInfo(pid)) || {};
@@ -178,6 +183,12 @@ function computeFrame() {
     if (fps) fps.fg.available = fgDet ? fgDet.label : null;
   }
   state.lastStats = fps;
+  if (fps && fps.displayedFps > 0) {
+    const now = Date.now();
+    state.fpsHistory.push({ t: now, displayed: fps.displayedFps, rendered: fps.renderedFps });
+    while (state.fpsHistory.length && state.fpsHistory[0].t < now - 30000) state.fpsHistory.shift();
+  }
+  refreshRtssCap();
 
   const inGame = !!t && !t.disabled && (!!fps || pm.status.state !== 'running');
   const visible = state.demo || (state.userVisible && (S.general.showOnlyInGames ? inGame : true));
@@ -186,8 +197,10 @@ function computeFrame() {
   placeOverlay();
 
   const det = t?.detection;
+  const cap = state.rtss.running && state.rtss.cap?.limit > 0 ? state.rtss.cap : null;
   overlayWin.webContents.send('overlay:frame', {
     fps,
+    limiter: cap ? { limit: cap.limit, mode: cap.mode } : null,
     upscaler: det?.upscaler ? { label: det.upscaler.label, model: det.upscaler.model, confidence: det.upscaler.confidence } : null,
     gpu: tick.gpu || null,
     cpu: tick.cpu,
@@ -287,6 +300,75 @@ function relaunchElevated() {
     if (code === 0) app.quit();
     else app.requestSingleInstanceLock(); // user declined UAC
   });
+}
+
+// ------------------------------------------------------------------ RTSS frame limiter
+const exeOf = (t) => (t?.info?.path ? path.basename(t.info.path) : t?.app || null);
+
+async function refreshRtssStatus() {
+  state.rtss.install = await rtss.locate();
+  state.rtss.running = state.rtss.install ? await rtss.isRunning() : false;
+  state.rtss.checkedAt = 0;
+}
+
+/** Re-reads the current game's cap from its RTSS profile every few seconds (cheap file read). */
+function refreshRtssCap(force = false) {
+  const R = state.rtss;
+  if (!R.install) { R.cap = null; return; }
+  if (!force && Date.now() - R.checkedAt < 5000) return;
+  R.checkedAt = Date.now();
+  const exe = exeOf(state.target);
+  R.cap = exe ? rtss.readProfile(R.install.dir, exe) : null;
+}
+
+function gameRefreshRate() {
+  const fg = helper.last?.fg;
+  let display = screen.getPrimaryDisplay();
+  if (state.target && fg && fg.w > 0) display = screen.getDisplayMatching(screen.screenToDipRect(null, { x: fg.x, y: fg.y, width: fg.w, height: fg.h }));
+  return Math.round(display.displayFrequency || 0);
+}
+
+function sustainedFps(field) {
+  const v = state.fpsHistory.map((h) => h[field]).filter((x) => x > 0).sort((a, b) => a - b);
+  if (v.length < 20) return 0; // need ~5 s of data
+  return v[Math.floor(v.length * 0.1)];
+}
+
+async function rtssStatus(exeOverride) {
+  if (!state.rtss.install || !state.rtss.checkedStatusAt || Date.now() - state.rtss.checkedStatusAt > 5000) {
+    await refreshRtssStatus();
+    state.rtss.checkedStatusAt = Date.now();
+  }
+  const R = state.rtss;
+  const exe = exeOverride || exeOf(state.target);
+  const fg = state.lastStats?.fg || null;
+  const driverFg = fg?.active && fg.source === 'frame-type';
+  const refresh = gameRefreshRate();
+  const rec = rtss.recommendCap({
+    refresh, vrr: settings.get().limiter.vrr, fg,
+    sustainedFps: sustainedFps(driverFg ? 'rendered' : 'displayed'),
+  });
+  return {
+    installed: !!R.install,
+    version: R.install?.version || '',
+    running: R.running,
+    elevated: !!helper.last?.admin,
+    exe,
+    isCurrentGame: !!exe && exe === exeOf(state.target),
+    profile: R.install && exe ? rtss.readProfile(R.install.dir, exe) : null,
+    refresh,
+    recommendation: rec,
+    games: themes.list().filter((g) => g.exe).map((g) => ({ exe: path.basename(g.exe), name: g.name })),
+  };
+}
+
+async function rtssApply(exe, limit, mode) {
+  if (!state.rtss.install) await refreshRtssStatus();
+  if (!state.rtss.install) return { ok: false, message: 'RTSS is not installed.' };
+  if (!exe) return { ok: false, message: 'No game selected.' };
+  const res = await rtss.applyCap(state.rtss.install.dir, exe, { limit: Math.max(0, +limit || 0), mode }, !!helper.last?.admin);
+  refreshRtssCap(true);
+  return { ...res, profile: rtss.readProfile(state.rtss.install.dir, exe) };
 }
 
 // ------------------------------------------------------------------ hotkeys, tray
@@ -394,6 +476,9 @@ function setupIpc() {
   ipcMain.handle('app:openData', () => shell.openPath(app.getPath('userData')));
   ipcMain.handle('app:openUrl', (_e, url) => { if (/^https:\/\/(github\.com|store\.steampowered\.com)\//.test(url)) shell.openExternal(url); });
   ipcMain.handle('overlay:demo', (_e, on) => { state.demo = !!on; pushConfig(); return state.demo; });
+  ipcMain.handle('rtss:status', (_e, exe) => rtssStatus(exe));
+  ipcMain.handle('rtss:apply', (_e, { exe, limit, mode }) => rtssApply(exe, limit, mode));
+  ipcMain.handle('rtss:download', () => shell.openExternal('https://www.guru3d.com/download/rtss-rivatuner-statistics-server-download/'));
   ipcMain.handle('hotkeys:pause', (_e, paused) => { if (paused) globalShortcut.unregisterAll(); else registerHotkeys(); return hotkeyFailures; });
 }
 
@@ -408,7 +493,7 @@ async function captureShots(dir) {
   const shot = async (name) => fs.writeFileSync(path.join(dir, `${name}.png`), (await wc.capturePage()).toPNG());
   const original = settings.get().overlay.layout;
   // Diagnostics is left out on purpose: it shows local paths and running processes.
-  for (const page of ['home', 'overlay', 'metrics', 'themes', 'framegen', 'games']) {
+  for (const page of ['home', 'overlay', 'metrics', 'themes', 'framegen', 'limiter', 'games']) {
     await wc.executeJavaScript(`document.querySelector('#nav [data-page="${page}"]').click()`);
     await wait(1500);
     await shot(page);
@@ -438,6 +523,8 @@ app.whenReady().then(() => {
   pm.on('status', (s) => sendSettings('pm:status', s));
   helper.start(500);
   startPresentMon();
+  refreshRtssStatus();
+  setInterval(refreshRtssStatus, 15000);
 
   setupIpc();
   createOverlay();

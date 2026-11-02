@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('superlay', {
   openUrl: invoke('app:openUrl'),
   setDemo: invoke('overlay:demo'),
   pauseHotkeys: invoke('hotkeys:pause'),
+  rtssStatus: invoke('rtss:status'),
+  rtssApply: invoke('rtss:apply'),
+  rtssDownload: invoke('rtss:download'),
   on: (ch, fn) => {
     if (!['settings:changed', 'games:changed', 'pm:status'].includes(ch)) return;
     ipcRenderer.on(ch, (_e, d) => fn(d));

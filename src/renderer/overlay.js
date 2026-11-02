@@ -36,6 +36,7 @@
   let clockOffset = null;                // PresentMon time - performance.now()
   let targetOffset = null;
   let yMax = 20;
+  let capLimit = 0;
   let colors = {};
   let colorAge = 1e9;
 
@@ -81,7 +82,8 @@
     for (const [t, v] of samples) if (t >= t0 && t <= tNow) { if (v > maxV) maxV = v; sum += v; n++; }
     if (!n) return;
     const avg = sum / n;
-    const want = Math.max(avg * 2.2, maxV * 1.15, 4);
+    const capMs = capLimit > 0 && cfg?.limiter?.showTargetLine !== false ? 1000 / capLimit : 0;
+    const want = Math.max(avg * 2.2, maxV * 1.15, capMs * 1.6, 4);
     yMax += (want - yMax) * (1 - Math.exp(-dt / 400));
 
     const X = (t) => ((t - t0) / span) * w;
@@ -94,6 +96,15 @@
     ctx.setLineDash([2, 3]);
     ctx.beginPath(); ctx.moveTo(0, Y(avg)); ctx.lineTo(w, Y(avg)); ctx.stroke();
     ctx.setLineDash([]);
+
+    // frame-rate cap target: with good pacing the line sits right on it
+    if (capMs) {
+      ctx.strokeStyle = colors.accent2;
+      ctx.globalAlpha = 0.55;
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath(); ctx.moveTo(0, Y(capMs)); ctx.lineTo(w, Y(capMs)); ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // area + line
     const grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -200,6 +211,8 @@
       tween('ft', fps.frametimeMs, { digits: 1, tau: 220 });
       tween('low1', fps.low1Fps, { tau: 400 });
       tween('lat', fps.latencyMs ?? NaN, { digits: 1, tau: 300 });
+      tween('pacing', fps.pacingMs ?? NaN, { digits: 2, tau: 500 });
+      setLevel($('pacing').parentElement, fps.pacingMs > 4 ? 2 : fps.pacingMs > 1.5 ? 1 : 0);
       const lowStat = $('low1').parentElement;
       setLevel(lowStat, fps.low1Fps && fps.displayedFps && fps.low1Fps < fps.displayedFps * 0.5 ? 1 : 0);
 
@@ -217,7 +230,7 @@
       pushFrames(fps.frames, fps.now);
       $('live').classList.remove('off');
     } else {
-      tween('fps', NaN); tween('ft', NaN); tween('low1', NaN); tween('lat', NaN);
+      tween('fps', NaN); tween('ft', NaN); tween('low1', NaN); tween('lat', NaN); tween('pacing', NaN);
       $('fgChip').hidden = true; $('fpsSub').hidden = true; $('fgNameChip').hidden = true;
       $('live').classList.add('off');
     }
@@ -243,6 +256,13 @@
     }
     const now = new Date();
     $('clock').textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const lim = f.limiter;
+    // Driver FG (AFMF) multiplies frames after RTSS's cap; the graph shows displayed frames.
+    const driverFg = fps?.fg?.active && fps.fg.source === 'frame-type';
+    capLimit = lim ? lim.limit * (driverFg ? fps.fg.multiplier : 1) : 0;
+    $('capChip').hidden = !lim;
+    if (lim) $('capChip').textContent = `CAP ${+lim.limit.toFixed(2)}${{ 'front-edge': ' · FES', 'back-edge': ' · BES' }[lim.mode] || ''}`;
 
     const up = f.upscaler;
     $('upChip').hidden = !up;
@@ -310,7 +330,7 @@
     let base = 118;
     demoTimer = setInterval(() => {
       const dt = cfg?.overlay?.updateMs || 250;
-      base += (Math.random() - 0.5) * 6; base = Math.max(90, Math.min(140, base));
+      base += (Math.random() - 0.5) * 6; base = Math.max(110, Math.min(120, base)); // demo runs against a 120 fps cap
       const mult = cfg?.framegen?.inGameMultiplier === 'off' ? 1 : (+cfg?.framegen?.inGameMultiplier || 2);
       const disp = base * mult;
       const frames = [];
@@ -323,13 +343,14 @@
       }
       applyFrame({
         fps: {
-          displayedFps: disp, renderedFps: base, frametimeMs: ft, low1Fps: disp * 0.78, latencyMs: 24 + Math.random() * 4,
+          displayedFps: disp, renderedFps: base, frametimeMs: ft, low1Fps: disp * 0.78, latencyMs: 24 + Math.random() * 4, pacingMs: 0.4 + Math.random() * 0.2,
           fg: { active: mult > 1, multiplier: mult, source: 'frame-type', name: 'AFMF 2' }, frames, now: demoT,
         },
         gpu: { load: 94 + Math.random() * 5, temp: 64 + Math.random() * 2, clock: 2950 + Math.random() * 60, vramUsed: 9.4e9, vramTotal: 17.1e9 },
         cpu: 38 + Math.random() * 10,
         ram: { used: 18.2e9, total: 34.2e9 },
         upscaler: { label: 'FSR 4', model: 'ML upscaler (driver)', confidence: 'active' },
+        limiter: { limit: 120, mode: 'front-edge' },
       });
     }, cfg?.overlay?.updateMs || 250);
   }

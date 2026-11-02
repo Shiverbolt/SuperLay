@@ -36,6 +36,8 @@ const DEFAULTS = {
     upscaler: true,
     framegen: true,
     latency: false,
+    pacing: false,
+    limiter: true,
     time: false,
   },
   stats: {
@@ -55,6 +57,11 @@ const DEFAULTS = {
     inGameMultiplier: 'auto',  // auto | off | 2 | 3 | 4
     detectLosslessScaling: true,
     showSource: true,
+  },
+  limiter: {
+    vrr: true,                 // display uses FreeSync / G-Sync: cap a few fps under refresh
+    defaultMode: 'front-edge', // async | front-edge | back-edge
+    showTargetLine: true,      // draw the cap's frame time on the overlay graph
   },
   hotkeys: {
     toggleOverlay: 'Alt+Shift+O',

@@ -48,6 +48,20 @@ Most overlays count *presents*, so FG either doesn't show or gets double-counted
   - **lossless scaling**: Lossless Scaling's output rate compared with the game's own present rate.
   - **manual**: a multiplier you set (useful for DLSS Multi Frame Gen).
 
+## Frame limiter (via RTSS)
+
+SuperLay doesn't inject anything into games. It sets per-game caps in [RivaTuner Statistics Server](https://www.guru3d.com/download/rtss-rivatuner-statistics-server-download/), using RTSS's own profile API (the one MSI Afterburner uses), and RTSS does the in-game limiting. RTSS is free; install it separately.
+
+- **Modes:** async, front edge sync and back edge sync. Changes apply live, mid-game.
+- **Recommended cap:**
+  - starts a few fps under your refresh rate on VRR displays (180 Hz → 177)
+  - caps the *base* rate when driver frame generation such as AFMF is on, because that runs after RTSS
+  - drops to the frame rate your system actually sustains, so frame times stay flat
+- **On the overlay:** a cap chip, the cap's target frame time drawn on the graph, and an optional **Pacing** metric (average frame-to-frame change; lower is smoother).
+- **Admin rights:** RTSS stores profiles under Program Files, so applying a cap asks for administrator permission unless SuperLay already runs as admin.
+
+![Frame limiter page](docs/screenshots/limiter.png)
+
 ## Upscaler detection
 
 SuperLay reads the game's loaded modules: DLSS (with transformer/CNN generation from the DLL version), DLSS RR/FG, FSR 2/3.1/4 (including AMD's driver FSR 4 `amdxcffx64.dll`), XeSS, XeSS FG and OptiScaler. Anti-cheat protected games block module reads. For those it checks which of the game's own DLLs are mapped as images (a mapped DLL can't be opened for writing), so it still finds the active upscaler without touching the process. DLSS presets and AMD's driver-side FSR 4 upgrade aren't visible to other apps, so they're shown as capabilities.
