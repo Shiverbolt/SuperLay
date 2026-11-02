@@ -296,7 +296,7 @@ atest('OptiScaler: anti-cheat blocks install unless explicitly allowed', async (
     t.w(pathx.join(t.game, 'AntiCheatExpert', 'ACE-Base64.dll'), 'ace');   // Wuthering Waves layout
     await assert.rejects(t.opti.install(t.g, { vendor: 'amd' }), /ACE/);
     assert.ok(!t.has('dxgi.dll'));
-    await t.opti.install(t.g, { vendor: 'amd', allowAntiCheat: true });
+    await t.opti.install(t.g, { vendor: 'amd', allowRisk: true });
     assert.ok(t.has('dxgi.dll'));
   } finally { t.cleanup(); }
 });
@@ -310,6 +310,44 @@ atest('OptiScaler: running game blocks install; manual installs are recognised',
     const s = await t.opti.gameStatus(t.g);
     assert.strictEqual(s.state, 'manual');
     assert.strictEqual(s.proxy, 'winmm.dll');
+  } finally { t.cleanup(); }
+});
+
+test('library: picks the game exe, not launchers, redistributables or crash tools', () => {
+  const { pickExe } = require('../src/main/library');
+  const root = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'sl-lib-'));
+  const mk = (rel, mb) => { const p = pathx.join(root, rel); fsx.mkdirSync(pathx.dirname(p), { recursive: true }); fsx.writeFileSync(p, Buffer.alloc(mb * 1024 * 1024)); };
+  try {
+    // Wuthering Waves layout: small launcher at the root, big redist, Unreal shipping exe deep down
+    mk('WW/Wuthering Waves.exe', 1); mk('WW/Engine/Extras/Redist/en-us/UE4PrereqSetup_x64.exe', 39);
+    mk('WW/Client/Binaries/Win64/Client-Win64-Shipping.exe', 20); mk('WW/Client/Binaries/Win64/AntiCheatExpert/ACE-Service64.exe', 3);
+    assert.ok(pickExe(pathx.join(root, 'WW')).endsWith('Client-Win64-Shipping.exe'));
+    // Witcher 3: launcher + crash reporter + the real exe
+    mk('W3/REDprelauncher.exe', 1); mk('W3/bin/x64_dx12/crashreporter/CrashReporter.exe', 2); mk('W3/bin/x64_dx12/witcher3.exe', 12);
+    assert.ok(pickExe(pathx.join(root, 'W3')).endsWith('witcher3.exe'));
+    // Forza: protocol helper next to the game
+    mk('FH/forzaprotocolselector.exe', 2); mk('FH/forzahorizon6.exe', 9);
+    assert.ok(pickExe(pathx.join(root, 'FH')).endsWith('forzahorizon6.exe'));
+    // Where Winds Meet: the game itself lives under Engine\Binaries\Win64r
+    mk('WWM/Engine/Binaries/Win64r/wwm.exe', 8); mk('WWM/Engine/Binaries/Win64r/UniCrashReporter.exe', 3);
+    assert.ok(pickExe(pathx.join(root, 'WWM')).endsWith('wwm.exe'));
+  } finally { fsx.rmSync(root, { recursive: true, force: true }); }
+});
+
+atest('OptiScaler: online PvP (Steam) and protected processes need confirmation', async () => {
+  const t = optiFixture();
+  try {
+    const cats = { 100: [2, 1, 36, 38], 200: [2, 38], 300: [2] };
+    t.opti.d.net = { fetch: async (url) => { const id = url.match(/appids=(\d+)/)[1]; return { json: async () => ({ [id]: { data: { categories: cats[id].map((x) => ({ id: x })) } } }) }; } };
+    const pvp = { ...t.g, appId: '100' };
+    await assert.rejects(t.opti.install(pvp, { vendor: 'amd' }), /Online multiplayer/);
+    const coop = await t.opti.risks({ ...t.g, appId: '200' }, await t.opti.scanGame(t.g.exe));
+    assert.deepStrictEqual(coop.map((r) => r.level), ['warn'], 'co-op only warns');
+    const solo = { ...t.g, appId: '300' };
+    t.opti.markProtected(solo.exe);
+    await assert.rejects(t.opti.install(solo, { vendor: 'amd' }), /Blocked inspection/);
+    await t.opti.install(solo, { vendor: 'amd', allowRisk: true });
+    assert.ok(t.has('dxgi.dll'));
   } finally { t.cleanup(); }
 });
 

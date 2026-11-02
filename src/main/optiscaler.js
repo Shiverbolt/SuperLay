@@ -87,6 +87,48 @@ class OptiScaler {
     this.scanCache = new Map();
     this.busy = {};
     try { this.installs = JSON.parse(fs.readFileSync(this.manifestFile, 'utf8')); } catch { this.installs = {}; }
+    this.metaFile = path.join(this.root, 'game-signals.json');
+    try { this.meta = JSON.parse(fs.readFileSync(this.metaFile, 'utf8')); } catch { this.meta = { steam: {}, protected: {} }; }
+  }
+
+  saveMeta() {
+    try { fs.mkdirSync(this.root, { recursive: true }); fs.writeFileSync(this.metaFile, JSON.stringify(this.meta, null, 2)); } catch { /* best effort */ }
+  }
+
+  /** Called when a running game refused module inspection: a strong sign of kernel-level anti-cheat. */
+  markProtected(exe) {
+    const k = exe.toLowerCase();
+    if (this.meta.protected[k]) return;
+    this.meta.protected[k] = Date.now();
+    this.saveMeta();
+  }
+
+  /** Steam store categories for an app (cached for 30 days). */
+  async steamCategories(appId) {
+    if (!appId || !this.d.net) return [];
+    const c = this.meta.steam[appId];
+    if (c && Date.now() - c.at < 30 * 86400000) return c.ids;
+    try {
+      const res = await this.d.net.fetch(`https://store.steampowered.com/api/appdetails?appids=${appId}&filters=categories`, { headers: { 'User-Agent': 'SuperLay' } });
+      const j = await res.json();
+      const ids = (j?.[appId]?.data?.categories || []).map((x) => x.id);
+      this.meta.steam[appId] = { at: Date.now(), ids };
+      this.saveMeta();
+      return ids;
+    } catch { return c?.ids || []; }
+  }
+
+  /**
+   * Why installing could be risky. 'block' risks need explicit confirmation; 'warn' ones are shown only.
+   * OptiScaler's own docs: "Do not use this mod with online games. It may trigger anti-cheat software and cause bans!"
+   */
+  async risks(game, scan) {
+    const out = scan.antiCheat.map((n) => ({ level: 'block', text: `Anti-cheat: ${n}` }));
+    if (this.meta.protected[game.exe.toLowerCase()]) out.push({ level: 'block', text: 'Blocked inspection while running (usually kernel anti-cheat)' });
+    const cats = await this.steamCategories(game.appId);
+    if (cats.includes(20) || cats.includes(36)) out.push({ level: 'block', text: cats.includes(20) ? 'Online game (MMO)' : 'Online multiplayer (PvP)' });
+    else if (cats.includes(38) || cats.includes(1)) out.push({ level: 'warn', text: 'Has online play: use OptiScaler offline' });
+    return out;
   }
 
   saveManifest() {
@@ -199,6 +241,7 @@ class OptiScaler {
       proxy: m?.proxy || (manualProxy ? manualProxy[0] : ''),
       missing, changed,
       antiCheat: scan.antiCheat,
+      risks: await this.risks(game, scan),
       writable: scan.writable,
       freeProxies: PROXIES.filter((p) => !scan.proxies[p] || (m && m.proxy === p)),
       takenProxies: Object.entries(scan.proxies).filter(([n]) => !(m && m.proxy === n)).map(([n, p]) => ({ name: n, by: p.orig || 'unknown' })),
@@ -208,12 +251,13 @@ class OptiScaler {
   }
 
   // ------------------------------------------------------------ install / remove
-  async install(game, { proxy = 'auto', vendor = '', allowAntiCheat = false } = {}) {
+  async install(game, { proxy = 'auto', vendor = '', allowRisk = false } = {}) {
     if (!game?.exe || !fs.existsSync(game.exe)) throw new Error('Game executable not found. Launch the game once so SuperLay can find it.');
     if (await this.isRunning(game.exe)) throw new Error('Close the game first: its files are in use.');
     const scan = await this.scanGame(game.exe, true);
-    if (scan.antiCheat.length && !allowAntiCheat) {
-      throw new Error(`Anti-cheat detected (${scan.antiCheat.join(', ')}). OptiScaler can get accounts banned in online games.`);
+    const blocking = (await this.risks(game, scan)).filter((r) => r.level === 'block');
+    if (blocking.length && !allowRisk) {
+      throw new Error(`${blocking.map((r) => r.text).join('; ')}. OptiScaler can get accounts banned in online games.`);
     }
     if (!scan.writable) throw new Error('SuperLay can\'t write to this game\'s folder. Run SuperLay as administrator or check the folder\'s permissions.');
 

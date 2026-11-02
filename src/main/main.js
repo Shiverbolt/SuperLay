@@ -13,6 +13,7 @@ const { makeIcon } = require('./icon');
 const rtss = require('./rtss');
 const { Components } = require('./components');
 const { OptiScaler } = require('./optiscaler');
+const { scanLibrary } = require('./library');
 
 app.setAppUserModelId('app.superlay');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -41,6 +42,7 @@ const state = {
   helperStatus: { state: 'starting' },
   fpsHistory: [],        // [{ t, displayed, rendered }] for the current target, last 30 s
   rtss: { install: null, running: false, cap: null, checkedAt: 0 },
+  library: { games: [], scannedAt: 0, scanning: null },
 };
 
 // ------------------------------------------------------------------ windows
@@ -156,6 +158,8 @@ async function setTarget(pid, appName, title) {
   const runDetect = async () => {
     if (state.target !== t || !info.path) return;
     try { t.detection = await detector.detect(pid, info.path, helper.last?.gpu?.name || ''); } catch (e) { console.error('detect', e); }
+    // The game refused module inspection: remember it, so the OptiScaler page treats it as protected.
+    if (t.detection && t.detection.method !== 'modules') opti?.markProtected(info.path);
   };
   runDetect();
   t.detectTimer = setInterval(runDetect, 10000); // upscalers often load only once a level starts
@@ -375,13 +379,50 @@ function gpuVendor() {
   return /nvidia|geforce|rtx|gtx/i.test(n) ? 'nvidia' : /amd|radeon/i.test(n) ? 'amd' : /intel|arc/i.test(n) ? 'intel' : '';
 }
 
+// ------------------------------------------------------------------ installed-games library
+async function rescanLibrary() {
+  if (state.library.scanning) return state.library.scanning;
+  state.library.scanning = (async () => {
+    const seen = themes.list().map((g) => g.exe).filter(Boolean);
+    try { state.library.games = await scanLibrary(seen); } catch (e) { console.error('library scan', e); }
+    state.library.scannedAt = Date.now();
+    sendSettings('opti:changed');
+    themeLibrary();
+  })().finally(() => { state.library.scanning = null; });
+  return state.library.scanning;
+}
+
+/** Fetch cover-art themes for newly found games, one at a time so a big library doesn't flood the network. */
+async function themeLibrary() {
+  if (state.library.theming || !settings.get().theme.onlineLookup) return;
+  state.library.theming = true;
+  try {
+    for (const g of state.library.games) {
+      if (themes.get(g.key)?.theme) continue;
+      await themes.resolve({ key: g.key, exe: g.exe, name: g.name, steamAppId: g.appId }, { online: true }).catch(() => {});
+      sendSettings('games:changed');
+      sendSettings('opti:changed');
+    }
+  } finally { state.library.theming = false; }
+}
+
+/** Installed games (store records) merged with games SuperLay has seen running. */
 function knownGames() {
-  const list = themes.list().filter((g) => g.exe && fs.existsSync(g.exe)).map((g) => ({ key: g.key, name: g.name, exe: g.exe, thumb: g.thumb }));
+  const byKey = new Map();
+  const add = (g) => { if (g.exe && !byKey.has(g.key) && fs.existsSync(g.exe)) byKey.set(g.key, g); };
   const t = state.target;
-  if (t?.game?.key && t.info?.path && !list.some((g) => g.key === t.game.key)) {
-    list.unshift({ key: t.game.key, name: t.entry?.name || t.game.name, exe: t.info.path, thumb: t.entry?.thumb });
+  if (t?.game?.key && t.info?.path) add({ key: t.game.key, name: t.entry?.name || t.game.name, exe: t.info.path });
+  for (const g of state.library.games) add({ key: g.key, name: g.name, exe: g.exe, store: g.store, appId: g.appId });
+  // Games seen running but not in any store record (or living outside a store's folder).
+  const libDirs = state.library.games.map((g) => `${g.dir.toLowerCase()}\\`);
+  for (const g of themes.list()) {
+    if (!g.exe || libDirs.some((d) => g.exe.toLowerCase().startsWith(d))) continue;
+    add({ key: g.key, name: g.name, exe: g.exe });
   }
-  return list;
+  return [...byKey.values()].map((g) => {
+    const th = themes.get(g.key);
+    return { ...g, name: th?.name || g.name, thumb: th?.thumb || null, appId: g.appId || th?.appId || null };
+  }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function optiStatus({ checkUpdates = false } = {}) {
@@ -397,6 +438,7 @@ async function optiStatus({ checkUpdates = false } = {}) {
     package: { version: cached?.version || '', latest: latest?.version || '', updateAvailable: !!(cached && latest?.version && latest.version !== cached.version), busy: opti.busy.package || null },
     vendor: gpuVendor(),
     rtssInstalled: !!state.rtss.install,
+    library: { scanning: !!state.library.scanning, scannedAt: state.library.scannedAt, stores: [...new Set(state.library.games.map((g) => g.store))] },
     games,
   };
 }
@@ -412,7 +454,7 @@ async function optiAct(key, action, opts = {}) {
     if (!game) return { ok: false, message: 'Game not found.' };
     if (action === 'folder') { await shell.openPath(path.dirname(game.exe)); return { ok: true }; }
     let res;
-    if (action === 'install' || action === 'update') res = await opti.install(game, { proxy: opts.proxy || 'auto', vendor: gpuVendor(), allowAntiCheat: !!opts.allowAntiCheat });
+    if (action === 'install' || action === 'update') res = await opti.install(game, { proxy: opts.proxy || 'auto', vendor: gpuVendor(), allowRisk: !!opts.allowRisk });
     else if (action === 'remove') res = await opti.uninstall(game);
     else return { ok: false, message: 'Unknown action.' };
     if (state.target?.game?.key === key) state.target.detection = null; // re-detect upscaler on next pass
@@ -520,6 +562,7 @@ function setupIpc() {
   ipcMain.handle('components:act', (_e, id, action) => (id === 'optiscaler' ? optiAct(null, 'download') : componentAct(id, action)));
   ipcMain.handle('opti:status', (_e, opts) => optiStatus(opts || {}));
   ipcMain.handle('opti:act', (_e, key, action, opts) => optiAct(key, action, opts || {}));
+  ipcMain.handle('library:rescan', async () => { await rescanLibrary(); return state.library.games.length; });
   ipcMain.handle('pm:browse', async () => {
     const r = await dialog.showOpenDialog(settingsWin, { title: 'Locate PresentMon', filters: [{ name: 'PresentMon', extensions: ['exe'] }], properties: ['openFile'] });
     if (r.canceled || !r.filePaths[0]) return null;
@@ -585,6 +628,8 @@ app.whenReady().then(() => {
   startPresentMon();
   refreshRtssStatus();
   setInterval(refreshRtssStatus, 15000);
+  rescanLibrary();
+  setInterval(rescanLibrary, 10 * 60 * 1000);
 
   setupIpc();
   createOverlay();

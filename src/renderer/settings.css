@@ -225,6 +225,11 @@ input[type=number]:focus { border-color: var(--accent); }
 .opti-pkg small { color: var(--muted); }
 .warn-box { background: color-mix(in oklab, var(--warn) 9%, var(--panel)); border: 1px solid color-mix(in oklab, var(--warn) 35%, var(--line)); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin-bottom: 10px; }
 .opti-games { display: grid; gap: 10px; }
+.lib-head { display: flex; align-items: center; gap: 12px; margin: 26px 0 10px; }
+.lib-head h2 { margin: 0; }
+.lib-head .muted { font-size: 12px; }
+.lib-head .btn { margin-left: auto; padding: 5px 12px; font-size: 12px; }
+.store { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 1px 6px; border-radius: 4px; background: var(--panel2); }
 .og { display: grid; grid-template-columns: 54px 1fr auto; gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; animation: pageIn 420ms var(--spring) both; }
 .og img, .og .noimg { width: 54px; height: 72px; border-radius: 7px; object-fit: cover; background: var(--panel2); }
 .og h4 { margin: 0 0 4px; font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

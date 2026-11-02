@@ -296,6 +296,12 @@
   // ---------------------------------------------------------------- OptiScaler
   let opti = null;
   const optiMsg = {};          // key -> { ok, text }
+  const STORE_NAMES = { steam: 'Steam', epic: 'Epic', gog: 'GOG', ubisoft: 'Ubisoft', xbox: 'Xbox' };
+  $('#libRescan').addEventListener('click', async () => {
+    $('#libRescan').disabled = true; $('#libInfo').textContent = 'Scanning your game libraries…';
+    await api.rescanLibrary();
+    loadOpti(false);
+  });
   const tail = (p) => p.split('\\').slice(-3).join('\\');
   const VENDOR_NOTE = {
     amd: 'Radeon detected: DLSS spoofing and Fakenvapi are included, so DLSS-only games can use FSR 4.',
@@ -311,7 +317,7 @@
     else if (g.state === 'manual') t.push(['', `Installed manually as ${g.proxy || 'OptiScaler.dll'}`]);
     else t.push(['', 'Not installed']);
     if (g.state === 'installed' && opti.package.version && g.version !== opti.package.version) t.push(['warn', `Update · v${opti.package.version}`]);
-    if (g.antiCheat?.length) t.push(['bad', `Anti-cheat: ${g.antiCheat.join(', ')}`]);
+    for (const r of g.risks || []) t.push([r.level === 'block' ? 'bad' : 'warn', r.text]);
     if (g.running) t.push(['warn', 'Running']);
     return t.map(([c, s]) => `<span class="tagc ${c}">${esc(s)}</span>`).join('');
   }
@@ -322,7 +328,7 @@
     const b = (act, label, cls = '') => `<button class="btn ${cls}" data-ok="${g.key}" data-act="${act}" ${dis}>${label}</button>`;
     const out = [];
     if (g.state === 'none') {
-      if (g.antiCheat?.length) out.push(b('install-anyway', 'Install anyway…', 'ghost danger'));
+      if (g.risks?.some((r) => r.level === 'block')) out.push(b('install-anyway', 'Install anyway…', 'ghost danger'));
       else {
         out.push(`<select data-proxy="${g.key}" title="Filename OptiScaler loads as">${['auto', ...g.freeProxies].map((p) => `<option value="${p}">${p === 'auto' ? 'dxgi.dll (auto)' : p}</option>`).join('')}</select>`);
         out.push(b('install', 'Install'));
@@ -347,24 +353,28 @@
       <small>${esc(VENDOR_NOTE[opti.vendor] || '')}</small>`;
     if ($('#optiPkg').dataset.h !== pkgHtml) { $('#optiPkg').innerHTML = pkgHtml; $('#optiPkg').dataset.h = pkgHtml; }
     $('#optiRtss').hidden = !opti.rtssInstalled;
+    const L = opti.library || {};
+    $('#libInfo').textContent = L.scanning ? 'Scanning your game libraries…'
+      : `${opti.games.length} game${opti.games.length === 1 ? '' : 's'}${L.stores?.length ? ` · found in ${L.stores.map((s) => STORE_NAMES[s] || s).join(', ')}` : ''}`;
+    $('#libRescan').disabled = !!L.scanning;
 
     const html = opti.games.length ? opti.games.map((g, i) => {
       const m = optiMsg[g.key];
       const note = g.state === 'damaged' ? `${g.missing} file${g.missing === 1 ? '' : 's'} missing. A game update or Steam's file check probably removed them.`
         : g.state === 'manual' ? 'Not managed by SuperLay; remove it the way it was installed.'
-          : g.antiCheat?.length && g.state === 'none' ? 'Blocked: this game ships anti-cheat. Only continue if you play it offline.' : '';
+          : g.risks?.some((r) => r.level === 'block') && g.state === 'none' ? 'Blocked: online or anti-cheat protected. Only continue if you play it offline.' : '';
       return `
       <div class="og" style="animation-delay:${i * 40}ms">
         ${g.thumb ? `<img src="${g.thumb}" alt="">` : '<div class="noimg"></div>'}
         <div>
-          <h4>${esc(g.name)} ${optiTags(g)}</h4>
+          <h4>${esc(g.name)} ${g.store ? `<span class="store">${esc(STORE_NAMES[g.store] || g.store)}</span>` : ''} ${optiTags(g)}</h4>
           <div class="meta" title="${esc(g.dir || '')}">${esc(g.dir ? `…\\${tail(g.dir)}` : '')}${g.takenProxies?.length ? ` · already using: ${esc(g.takenProxies.map((x) => x.name).join(', '))}` : ''}</div>
           ${note ? `<div class="meta">${esc(note)}</div>` : ''}
           ${m ? `<div class="${m.ok ? 'ok-msg' : 'err'}">${esc(m.text)}</div>` : ''}
         </div>
         <div class="acts">${optiActs(g)}</div>
       </div>`;
-    }).join('') : '<p class="muted">No games yet. Launch a game once and it appears here.</p>';
+    }).join('') : '<p class="muted">No games found. SuperLay reads Steam, Epic, GOG, Ubisoft and Xbox installs; games from other launchers appear here after you run them once.</p>';
     if ($('#optiGames').dataset.h !== html) { $('#optiGames').innerHTML = html; $('#optiGames').dataset.h = html; }
   }
 
@@ -382,9 +392,10 @@
     let action = act, opts = {};
     if (act === 'install') opts.proxy = $(`select[data-proxy="${key}"]`)?.value || 'auto';
     if (act === 'install-anyway') {
-      const ok = confirm(`${g.name} ships anti-cheat (${g.antiCheat.join(', ')}).\n\nUsing OptiScaler in an online game can get your account banned. Only continue if you play this game offline.\n\nInstall OptiScaler anyway?`);
+      const why = g.risks.filter((r) => r.level === 'block').map((r) => `• ${r.text}`).join('\n');
+      const ok = confirm(`${g.name}:\n${why}\n\nUsing OptiScaler in an online game can get your account banned. Only continue if you play this game offline.\n\nInstall OptiScaler anyway?`);
       if (!ok) return;
-      action = 'install'; opts = { allowAntiCheat: true };
+      action = 'install'; opts = { allowRisk: true, proxy: 'auto' };
     }
     if (act === 'remove' && !confirm(`Remove OptiScaler from ${g.name}? Game files it replaced will be restored.`)) return;
     b.disabled = true;
