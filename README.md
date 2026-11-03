@@ -48,6 +48,8 @@ Frame capture works without admin if your account is in *Performance Log Users*;
 | Alt+Shift+O | Show / hide overlay |
 | Alt+Shift+L | Cycle layout (pill → card → minimal) |
 | Alt+Shift+S | Settings |
+| Ctrl+Alt+Space | Music: play / pause |
+| Ctrl+Alt+→ / ← | Music: next / previous track |
 
 ## How frame generation is reported
 
@@ -60,6 +62,12 @@ Most overlays count *presents*, so FG either doesn't show or gets double-counted
   - **estimated**: an FG library is loaded and per-present GPU time splits into heavy (rendered) and light (generated) frames. Several windows must agree before this is trusted.
   - **lossless scaling**: Lossless Scaling's output rate compared with the game's own present rate.
   - **manual**: a multiplier you set (useful for DLSS Multi Frame Gen).
+
+## Music controls
+
+The music hotkeys control whatever Windows shows as playing (Spotify, browser tabs, Apple Music, Media Player and others), through Windows' media session API. In game, a short notice on the overlay shows the track you switched to, and an optional "now playing" chip can stay on the overlay. Change the keys or turn the controls off under **Settings → Hotkeys**.
+
+![Music notice on the overlay](docs/screenshots/overlay-music.png)
 
 ## Frame limiter (via RTSS)
 
