@@ -461,6 +461,38 @@ atest('RTSS helper: back-to-back and concurrent requests never lose contact', as
   assert.strictEqual(lost.length, 0, `${lost.length} of ${results.length} lost contact`);
 });
 
+atest('OptiScaler: our install never shows as "manual", whatever happened in memory', async () => {
+  const t = optiFixture();
+  try {
+    await t.opti.install(t.g, { vendor: 'amd' });
+    // 1. in-memory records lost while the file is unchanged (mtime same): status must still find it
+    t.opti.installs = {};
+    assert.strictEqual((await t.opti.gameStatus(t.g)).state, 'installed', 'lost memory');
+    // 2. same game looked up under another key (e.g. a different path form while running)
+    const otherKey = { ...t.g, key: 'different-key' };
+    assert.strictEqual((await t.opti.gameStatus(otherKey)).state, 'installed', 'key mismatch');
+    await t.opti.uninstall(otherKey);
+    assert.strictEqual(t.read('libxess.dll'), 'XESS-GAME', 'restored via folder match');
+    assert.deepStrictEqual(JSON.parse(fsx.readFileSync(t.opti.manifestFile, 'utf8')), {}, 'record removed');
+  } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: a copy with an outdated view never drops another copy\'s records', async () => {
+  const t = optiFixture();
+  try {
+    const stale = new OptiScaler({ net: null, dataDir: t.opti.d.dataDir, helper: t.helper });  // started first
+    await t.opti.install(t.g, { vendor: 'amd' });                                                 // other copy installs game 1
+    // second game in another folder, installed by the stale copy
+    const g2dir = pathx.join(t.root, 'steamapps', 'common', 'Game2');
+    t.w(pathx.join(g2dir, 'Game2.exe'), 'EXE2');
+    stale.installs = {};                                                                           // its view is outdated
+    stale.manifestMtime = Date.now() + 1e9;                                                        // and it thinks it's current
+    await stale.install({ key: 'k2', name: 'Game2', exe: pathx.join(g2dir, 'Game2.exe') }, { vendor: 'amd' });
+    const onDisk = JSON.parse(fsx.readFileSync(t.opti.manifestFile, 'utf8'));
+    assert.deepStrictEqual(Object.keys(onDisk).sort(), ['k1', 'k2'], 'both records kept');
+  } finally { t.cleanup(); }
+});
+
 test('anti-cheat signatures', () => {
   const root = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'sl-ac-'));
   try {

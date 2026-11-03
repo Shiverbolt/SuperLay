@@ -137,17 +137,39 @@ class OptiScaler {
    * (Re)reads the install records when the file changed on disk, e.g. written by another SuperLay copy (dev build
    * vs installed). A failed read never wipes records already in memory.
    */
-  loadManifest() {
+  loadManifest(force = false) {
     let mtime = 0;
     try { mtime = fs.statSync(this.manifestFile).mtimeMs; } catch { return; }   // no installs yet
-    if (mtime === this.manifestMtime) return;
+    if (mtime === this.manifestMtime && !force) return;
     try {
       this.installs = JSON.parse(fs.readFileSync(this.manifestFile, 'utf8'));
       this.manifestMtime = mtime;
     } catch { /* keep what we have; try again next time */ }
   }
 
-  saveManifest() {
+  /**
+   * The install record for a game. The file on disk is the source of truth: before concluding there is none,
+   * re-read it, and also match by install folder, so a key mismatch can never turn our own install into
+   * "installed manually" with no Remove button.
+   */
+  findRecord(game) {
+    const byFolder = () => {
+      const dir = path.dirname(game.exe || '').toLowerCase();
+      return Object.values(this.installs).find((m) => m && m.dir && m.dir.toLowerCase() === dir) || null;
+    };
+    this.loadManifest();
+    let m = this.installs[game.key] || byFolder();
+    if (!m) { this.loadManifest(true); m = this.installs[game.key] || byFolder(); }
+    return m;
+  }
+
+  /**
+   * Applies one change (set or delete an entry) to the records on disk. Re-reads first, so a copy of SuperLay
+   * with an outdated view can never drop entries another copy wrote.
+   */
+  updateManifest(key, entry) {
+    this.loadManifest(true);
+    if (entry) this.installs[key] = entry; else delete this.installs[key];
     fs.mkdirSync(this.root, { recursive: true });
     fs.writeFileSync(this.manifestFile + '.tmp', JSON.stringify(this.installs, null, 2));
     fs.renameSync(this.manifestFile + '.tmp', this.manifestFile);
@@ -237,8 +259,7 @@ class OptiScaler {
 
   /** Install state for one game: none | installed | damaged | manual (someone else's OptiScaler). */
   async gameStatus(game) {
-    this.loadManifest();
-    const m = this.installs[game.key];
+    const m = this.findRecord(game);
     const scan = await this.scanGame(game.exe);
     const manualProxy = Object.entries(scan.proxies).find(([name, p]) => /optiscaler/i.test(p.orig) && (!m || m.proxy !== name));
     let state = 'none', missing = 0, changed = 0;
@@ -280,8 +301,7 @@ class OptiScaler {
     if (!scan.writable) throw new Error('SuperLay can\'t write to this game\'s folder. Run SuperLay as administrator or check the folder\'s permissions.');
 
     // Updating: remove our previous install first so its backups are restored before taking new ones.
-    this.loadManifest();
-    const prev = this.installs[game.key];
+    const prev = this.findRecord(game);
     if (prev) await this.uninstall(game, { alreadyCheckedRunning: true });
     const scan2 = await this.scanGame(game.exe, true);
 
@@ -321,8 +341,7 @@ class OptiScaler {
       await this.rollback(entry);
       throw new Error(`Install failed and was rolled back: ${e.message}`);
     }
-    this.installs[game.key] = entry;
-    this.saveManifest();
+    this.updateManifest(game.key, entry);
     this.scanCache.delete(game.exe);
     return { version: pkg.version, proxy: target, replaced: entry.files.filter((f) => f.action === 'replaced').map((f) => f.rel) };
   }
@@ -342,9 +361,9 @@ class OptiScaler {
   }
 
   async uninstall(game, { alreadyCheckedRunning = false } = {}) {
-    this.loadManifest();
-    const m = this.installs[game.key];
+    const m = this.findRecord(game);
     if (!m) throw new Error('OptiScaler wasn\'t installed by SuperLay for this game.');
+    const recordKey = m.key || game.key;   // the record may have been saved under another key
     if (!alreadyCheckedRunning && await this.isRunning(m.exe)) throw new Error('Close the game first: its files are in use.');
     const kept = [];
     for (const f of m.files.slice().reverse()) {
@@ -361,9 +380,8 @@ class OptiScaler {
       }
     }
     this.pruneDirs(m);
-    fs.rmSync(path.join(this.backupDir, game.key), { recursive: true, force: true });
-    delete this.installs[game.key];
-    this.saveManifest();
+    fs.rmSync(path.join(this.backupDir, recordKey), { recursive: true, force: true });
+    this.updateManifest(recordKey, null);
     this.scanCache.delete(m.exe);
     return { kept };
   }
