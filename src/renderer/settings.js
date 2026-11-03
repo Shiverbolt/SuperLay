@@ -341,6 +341,8 @@
       if (g.state === 'damaged') out.push(b('update', 'Repair'));
       else if (opti.package.version && g.version !== opti.package.version) out.push(b('update', 'Update'));
       out.push(b('remove', 'Remove', 'ghost'));
+    } else if (g.state === 'manual') {
+      out.push(b('remove', 'Remove', 'ghost'));
     }
     out.push(`<button class="btn ghost" data-ok="${g.key}" data-act="folder">Open folder</button>`);
     return out.join('');
@@ -365,7 +367,7 @@
     const html = opti.games.length ? opti.games.map((g, i) => {
       const m = optiMsg[g.key];
       const note = g.state === 'damaged' ? `${g.missing} file${g.missing === 1 ? '' : 's'} missing. A game update or Steam's file check probably removed them.`
-        : g.state === 'manual' ? 'Not managed by SuperLay; remove it the way it was installed.'
+        : g.state === 'manual' ? 'SuperLay has no install record for this one. Remove moves OptiScaler\'s own files to a backup folder.'
           : g.risks?.some((r) => r.level === 'block') && g.state === 'none' ? 'Blocked: online or anti-cheat protected. Only continue if you play it offline.' : '';
       return `
       <div class="og" style="animation-delay:${i * 40}ms">
@@ -380,6 +382,14 @@
       </div>`;
     }).join('') : '<p class="muted">No games found. SuperLay reads Steam, Epic, GOG, Ubisoft and Xbox installs; games from other launchers appear here after you run them once.</p>';
     if ($('#optiGames').dataset.h !== html) { $('#optiGames').innerHTML = html; $('#optiGames').dataset.h = html; }
+  }
+
+  function removeMessage(res) {
+    if (res.managed !== false) {
+      return `Removed${res.kept?.length ? `; kept ${res.kept.join(', ')} because the game has changed ${res.kept.length > 1 ? 'them' : 'it'} since` : ''}.`;
+    }
+    return `Removed ${res.moved.length} OptiScaler item${res.moved.length === 1 ? '' : 's'} (moved to a backup folder).`
+      + (res.kept?.length ? ` Kept ${res.kept.join(', ')}; Steam's "Verify integrity" restores the game's own copies if needed.` : '');
   }
 
   async function loadOpti(checkUpdates = false) {
@@ -401,13 +411,18 @@
       if (!ok) return;
       action = 'install'; opts = { allowRisk: true, proxy: 'auto' };
     }
-    if (act === 'remove' && !confirm(`Remove OptiScaler from ${g.name}? Game files it replaced will be restored.`)) return;
+    if (act === 'remove') {
+      const msg = g.state === 'manual'
+        ? `Remove OptiScaler from ${g.name}?\n\nSuperLay has no record of this install, so it removes only OptiScaler's own files (the ${g.proxy || 'OptiScaler'} DLL, its settings and log, Fakenvapi, the D3D12_Optiscaler folder) and moves them to a backup folder.\n\nUpscaler libraries such as libxess.dll and amd_fidelityfx_*.dll stay, in case the game shipped them. Steam's "Verify integrity of game files" restores any originals.`
+        : `Remove OptiScaler from ${g.name}? Game files it replaced will be restored.`;
+      if (!confirm(msg)) return;
+    }
     b.disabled = true;
     if (g) { g.busy = action; delete optiMsg[key]; renderOpti(); }
     const res = await api.optiAct(key || null, action, opts);
     if (key && act !== 'folder') {
       optiMsg[key] = res.ok
-        ? { ok: true, text: action === 'remove' ? `Removed${res.kept?.length ? `; kept ${res.kept.join(', ')} because the game has changed ${res.kept.length > 1 ? 'them' : 'it'} since` : ''}.` : `Installed v${res.version} as ${res.proxy}${res.replaced?.length ? `; backed up ${res.replaced.length} game file${res.replaced.length > 1 ? 's' : ''}` : ''}. In game, press Insert to choose the upscaler.` }
+        ? { ok: true, text: action === 'remove' ? removeMessage(res) : `Installed v${res.version} as ${res.proxy}${res.replaced?.length ? `; backed up ${res.replaced.length} game file${res.replaced.length > 1 ? 's' : ''}` : ''}. In game, press Insert to choose the upscaler.` }
         : { ok: false, text: res.message };
     } else if (!res.ok) alert(res.message);
     loadOpti(false);

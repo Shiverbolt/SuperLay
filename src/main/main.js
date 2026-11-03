@@ -468,7 +468,8 @@ async function optiAct(key, action, opts = {}) {
     if (action === 'folder') { await shell.openPath(path.dirname(game.exe)); return { ok: true }; }
     let res;
     if (action === 'install' || action === 'update') res = await opti.install(game, { proxy: opts.proxy || 'auto', vendor: gpuVendor(), allowRisk: !!opts.allowRisk });
-    else if (action === 'remove') res = await opti.uninstall(game);
+    // Managed installs are undone exactly; anything else (manual install, lost record) is cleaned up safely.
+    else if (action === 'remove') res = await opti.removeUnmanaged(game);
     else return { ok: false, message: 'Unknown action.' };
     if (state.target?.game?.key === key) state.target.detection = null; // re-detect upscaler on next pass
     return { ok: true, ...res };

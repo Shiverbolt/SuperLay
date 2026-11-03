@@ -493,6 +493,49 @@ atest('OptiScaler: a copy with an outdated view never drops another copy\'s reco
   } finally { t.cleanup(); }
 });
 
+atest('OptiScaler: Remove works without a record (manual install), keeps game files', async () => {
+  const t = optiFixture();
+  try {
+    // A hand-made install: renamed DLL, its files, plus the game's own files that must survive
+    t.w(pathx.join(t.game, 'dxgi.dll'), 'OPTI'); t.origs['dxgi.dll'] = 'OptiScaler.dll';
+    t.w(pathx.join(t.game, 'OptiScaler.ini'), 'ini'); t.w(pathx.join(t.game, 'OptiScaler.log'), 'log');
+    t.w(pathx.join(t.game, 'fakenvapi.dll'), 'f'); t.w(pathx.join(t.game, 'fakenvapi.ini'), 'f');
+    t.w(pathx.join(t.game, 'D3D12_Optiscaler', 'D3D12Core.dll'), 'd');
+    t.w(pathx.join(t.game, 'Licenses', 'XeSS_LICENSE.txt'), 'l');
+    t.w(pathx.join(t.game, 'd3d12.dll'), 'GAME-D3D12'); t.origs['d3d12.dll'] = 'd3d12.dll';   // the game's own (PBZ ships one)
+    assert.strictEqual((await t.opti.gameStatus(t.g)).state, 'manual');
+    const r = await t.opti.removeUnmanaged(t.g);
+    assert.strictEqual(r.managed, false);
+    assert.deepStrictEqual(r.moved.sort(), ['D3D12_Optiscaler', 'Licenses', 'OptiScaler.ini', 'OptiScaler.log', 'dxgi.dll', 'fakenvapi.dll', 'fakenvapi.ini'].sort());
+    assert.deepStrictEqual(r.kept, ['libxess.dll'], 'shared library left in place');
+    assert.deepStrictEqual(fsx.readdirSync(t.game).sort(), ['MyGame.exe', 'd3d12.dll', 'libxess.dll'], 'only game files remain');
+    assert.ok(fsx.existsSync(pathx.join(r.backup, 'dxgi.dll')), 'moved to backup, not deleted');
+    assert.strictEqual((await t.opti.gameStatus(t.g)).state, 'none');
+  } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: Remove refuses folders without OptiScaler and a game\'s own Licenses folder survives', async () => {
+  const t = optiFixture();
+  try {
+    await assert.rejects(t.opti.removeUnmanaged(t.g), /No OptiScaler files/);
+    t.w(pathx.join(t.game, 'winmm.dll'), 'OPTI'); t.origs['winmm.dll'] = 'OptiScaler.dll';
+    t.w(pathx.join(t.game, 'Licenses', 'GameEngine_LICENSE.txt'), 'game');
+    const r = await t.opti.removeUnmanaged(t.g);
+    assert.deepStrictEqual(r.moved, ['winmm.dll']);
+    assert.ok(t.has('Licenses/GameEngine_LICENSE.txt'));
+  } finally { t.cleanup(); }
+});
+
+atest('OptiScaler: Remove with a record uses the exact managed uninstall', async () => {
+  const t = optiFixture();
+  try {
+    await t.opti.install(t.g, { vendor: 'amd' });
+    const r = await t.opti.removeUnmanaged(t.g);
+    assert.notStrictEqual(r.managed, false);
+    assert.strictEqual(t.read('libxess.dll'), 'XESS-GAME', 'original restored from backup');
+  } finally { t.cleanup(); }
+});
+
 test('anti-cheat signatures', () => {
   const root = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'sl-ac-'));
   try {

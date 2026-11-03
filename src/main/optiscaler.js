@@ -273,6 +273,7 @@ class OptiScaler {
       state = !fs.existsSync(path.join(m.dir, m.proxy)) || missing ? 'damaged' : 'installed';
     } else if (manualProxy || fs.existsSync(path.join(scan.dir, 'OptiScaler.dll'))) {
       state = 'manual';
+      this.logManual(game, scan);
     }
     return {
       state,
@@ -386,5 +387,82 @@ class OptiScaler {
     return { kept };
   }
 }
+
+// Files that only OptiScaler's bundle puts in a game folder (safe to remove without a record).
+const OPTI_ONLY_FILES = /^(optiscaler\.(dll|ini|log|asi)|fakenvapi\.(dll|ini|log)|dlssg_to_fsr3.*\.(dll|log)|optipatcher\.asi)$/i;
+// Libraries OptiScaler ships that games also ship themselves: never removed without a record.
+const SHARED_LIBS = /^(libxess.*|libxell|amd_fidelityfx_.*)\.dll$/i;
+const OPTI_LICENSES = new Set(['directx_license.txt', 'fidelityfx_v1_license.md', 'fidelityfx_v2_license.md', 'xess_license.txt']);
+
+Object.assign(OptiScaler.prototype, {
+  /**
+   * Removes OptiScaler from a game folder SuperLay has no record for (installed by hand, by another tool, or a
+   * record SuperLay lost). Only unmistakable OptiScaler files are touched, and they're moved to a backup folder
+   * rather than deleted. Shared upscaler libraries stay: without a record we can't know if the game shipped them.
+   */
+  async removeUnmanaged(game) {
+    if (!game?.exe) throw new Error('Game executable not found.');
+    const m = this.findRecord(game);
+    if (m) return { ...(await this.uninstall(game)), managed: true };
+    if (await this.isRunning(game.exe)) throw new Error('Close the game first: its files are in use.');
+
+    const dir = path.dirname(game.exe);
+    const scan = await this.scanGame(game.exe, true);
+    const targets = [];
+    for (const [name, p] of Object.entries(scan.proxies)) if (/optiscaler/i.test(p.orig)) targets.push(name);
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { /* unreadable */ }
+    const kept = [];
+    for (const e of entries) {
+      if (e.isFile() && OPTI_ONLY_FILES.test(e.name)) targets.push(e.name);
+      if (e.isFile() && SHARED_LIBS.test(e.name)) kept.push(e.name);
+      if (e.isDirectory() && /^d3d12_optiscaler$/i.test(e.name)) targets.push(e.name);
+      if (e.isDirectory() && /^licenses$/i.test(e.name)) {
+        const files = fs.readdirSync(path.join(dir, e.name)).map((f) => f.toLowerCase());
+        if (files.length && files.every((f) => OPTI_LICENSES.has(f))) targets.push(e.name);
+      }
+    }
+    // A fakenvapi renamed to nvapi64.dll (older setups)
+    if (fs.existsSync(path.join(dir, 'nvapi64.dll'))) {
+      const v = await this.d.helper.versions([path.join(dir, 'nvapi64.dll')]);
+      if (/fakenvapi/i.test(v?.files?.[0]?.orig || '')) targets.push('nvapi64.dll');
+    }
+    if (!targets.some((t) => PROXIES.includes(t.toLowerCase()) || /^optiscaler\./i.test(t))) {
+      throw new Error('No OptiScaler files found in this game\'s folder.');
+    }
+
+    const backup = path.join(this.root, 'removed', `${game.key}-${Date.now()}`);
+    fs.mkdirSync(backup, { recursive: true });
+    const moved = [];
+    for (const name of [...new Set(targets)]) {
+      const src = path.join(dir, name);
+      try {
+        fs.cpSync(src, path.join(backup, name), { recursive: true });
+        fs.rmSync(src, { recursive: true, force: true });
+        moved.push(name);
+      } catch (e) { throw new Error(`Could not remove ${name}: ${e.message}. Nothing else was changed after that file.`); }
+    }
+    this.scanCache.delete(game.exe);
+    return { moved, kept, backup, managed: false };
+  },
+
+  /** Appends what gameStatus saw when it decided "manual", so the cause of a lost record is visible. */
+  logManual(game, scan) {
+    this._loggedManual = this._loggedManual || new Set();
+    if (this._loggedManual.has(game.key)) return;
+    this._loggedManual.add(game.key);
+    try {
+      let fileKeys = [];
+      try { fileKeys = Object.entries(JSON.parse(fs.readFileSync(this.manifestFile, 'utf8'))).map(([k, v]) => `${k}:${v.dir}`); } catch (e) { fileKeys = [`unreadable: ${e.message}`]; }
+      const line = JSON.stringify({
+        at: new Date().toISOString(), key: game.key, exe: game.exe, dir: scan.dir,
+        memoryKeys: Object.keys(this.installs), fileKeys, manifestFile: this.manifestFile,
+      });
+      const log = path.join(this.root, 'manual-detections.log');
+      fs.appendFileSync(log, `${line}\n`);
+      if (fs.statSync(log).size > 200000) fs.writeFileSync(log, `${line}\n`);
+    } catch { /* diagnostics only */ }
+  },
+});
 
 module.exports = { OptiScaler, findAntiCheat, PROXIES, ANTI_CHEAT };
