@@ -62,9 +62,29 @@
           <div class="field">
             <div class="label">Layout</div>
             <div class="layout-pick" data-seg="overlay.layout">
-              <button data-v="pill"><span class="lp lp-pill"><i></i><i></i><i></i><i></i></span>Pill</button>
-              <button data-v="card"><span class="lp lp-card"><i></i><i></i><i></i></span>Card</button>
-              <button data-v="minimal"><span class="lp lp-min"><i></i></span>Minimal</button>
+              <!-- ids stay pill/card/minimal (saved settings); labels describe the shapes: Bar, Card, Pill -->
+              <button data-v="pill" title="A slim strip with every metric in one row">
+                <svg class="lp" viewBox="0 0 96 56" aria-hidden="true">
+                  <rect class="lp-ov" x="6" y="6" width="84" height="11" rx="5.5"/>
+                  <rect class="lp-acc" x="10" y="9" width="10" height="5" rx="1.5"/>
+                  <polyline class="lp-ln" points="24,13 27,11 30,12.5 33,10 36,12 39,11"/>
+                  <rect class="lp-dim" x="43" y="10" width="8" height="3" rx="1.5"/><rect class="lp-dim" x="54" y="10" width="8" height="3" rx="1.5"/>
+                  <rect class="lp-dim" x="65" y="10" width="8" height="3" rx="1.5"/><rect class="lp-dim" x="76" y="10" width="10" height="3" rx="1.5"/>
+                </svg>Bar</button>
+              <button data-v="card" title="A panel with large FPS, graph and meters">
+                <svg class="lp" viewBox="0 0 96 56" aria-hidden="true">
+                  <rect class="lp-ov" x="6" y="5" width="30" height="46" rx="5"/>
+                  <rect class="lp-acc" x="10" y="10" width="14" height="6" rx="1.5"/>
+                  <polyline class="lp-ln" points="10,25 14,22 18,24 22,20 26,23 32,21"/>
+                  <rect class="lp-dim" x="10" y="30" width="22" height="3" rx="1.5"/><rect class="lp-dim" x="10" y="36" width="18" height="3" rx="1.5"/>
+                  <rect class="lp-dim" x="10" y="42" width="20" height="3" rx="1.5"/>
+                </svg>Card</button>
+              <button data-v="minimal" title="Just the frame rate, as small as it gets">
+                <svg class="lp" viewBox="0 0 96 56" aria-hidden="true">
+                  <rect class="lp-ov" x="6" y="6" width="28" height="11" rx="5.5"/>
+                  <rect class="lp-acc" x="10" y="9" width="11" height="5" rx="1.5"/>
+                  <rect class="lp-ln2" x="23" y="9.5" width="7" height="4" rx="2"/>
+                </svg>Pill</button>
             </div>
           </div>
           <div class="field">

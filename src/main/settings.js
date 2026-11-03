@@ -75,7 +75,7 @@ const DEFAULTS = {
   media: {
     enabled: true,           // music hotkeys
     showToast: true,         // show the track on the overlay after a music hotkey
-    showNowPlaying: false,   // keep a "now playing" chip on the overlay
+    showNowPlaying: false,   // keep a "now playing" chip on the overlay (Metrics page toggle)
   },
   presentmon: {
     path: '',

@@ -137,6 +137,7 @@ class PresentMon extends EventEmitter {
         display: idx('MsBetweenDisplayChange', 'msBetweenDisplayChange'),
         sim: idx('MsBetweenSimulationStart'),
         gpuBusy: idx('MsGPUBusy', 'msGPUActive'),
+        gpuWait: idx('MsGPUWait'),
         pcl: idx('MsPCLatency'),
         input: idx('MsAllInputToPhotonLatency', 'MsClickToPhotonLatency'),
         dropped: idx('Dropped'),
@@ -176,6 +177,7 @@ class PresentMon extends EventEmitter {
       type,
       sim: c.sim >= 0 ? num(f[c.sim]) : null,
       gpu: c.gpuBusy >= 0 ? num(f[c.gpuBusy]) : null,
+      gw: c.gpuWait >= 0 ? num(f[c.gpuWait]) : null,
       lat: (c.pcl >= 0 ? num(f[c.pcl]) : null) ?? (c.input >= 0 ? num(f[c.input]) : null),
     });
     if (ch.rows.length > 4000 && ch.rows[0].t < this.now - KEEP_MS) this.trim(ch);
@@ -234,7 +236,7 @@ class PresentMon extends EventEmitter {
 
     let dispN = 0, dispMs = 0, genN = 0, repeatN = 0, presN = 0, presMs = 0;
     let latSum = 0, latN = 0;
-    const gpu = [];
+    const gpu = [], gpuWait = [];
     const genTypes = new Set();
     let anyDisplay = false, anyType = false;
 
@@ -264,7 +266,10 @@ class PresentMon extends EventEmitter {
       if (!generated && r.between !== null && r.between > 0) { presN++; presMs += r.between; }
       if (r.lat !== null && r.lat > 0) { latSum += r.lat; latN++; }
       // 0 ms GPU busy is meaningful: untagged generated frames often show exactly that.
-      if (r.gpu !== null && r.gpu >= 0 && !generated) gpu.push(r.gpu);
+      if (!generated) {
+        if (r.gpu !== null && r.gpu >= 0) gpu.push(r.gpu);
+        if (r.gw !== null && r.gw >= 0) gpuWait.push(r.gw);
+      }
     }
 
     const presentFps = presMs > 0 ? (presN * 1000) / presMs : 0;
@@ -288,16 +293,18 @@ class PresentMon extends EventEmitter {
       } else if (simFps > 0 && displayedFps / simFps > 1.4) {
         renderedFps = simFps; multiplier = displayedFps / simFps; source = 'pcl';
       } else {
-        const m = this.cadenceMultiplier(pid, gpu);
+        // collected newest-first; the rhythm reads the same either way but keep it chronological
+        const m = this.cadenceMultiplier(pid, { busy: gpu.reverse(), wait: gpuWait.reverse() });
         if (m > 1) { multiplier = m; renderedFps = displayedFps / m; source = 'cadence'; }
       }
     }
-    // Hysteresis: FG turns on at once, but only turns off after 1.5 s without evidence, so a sparse signal
-    // can't make the badge blink. An explicit "off" setting applies immediately.
+    // Hysteresis: FG turns on at once, but only turns off after 1 s without evidence, so a sparse signal
+    // can't make the badge blink while games that really toggle FG (menus vs. world) still update promptly.
+    // An explicit "off" setting applies immediately.
     const hold = this.fgHold.get(pid);
     if (multiplier > 1.25) {
       this.fgHold.set(pid, { at: now, multiplier, source, name: fgName });
-    } else if (hold && now - hold.at < 1500 && multiplierSetting !== 'off' && displayedFps > 0) {
+    } else if (hold && now - hold.at < 1000 && multiplierSetting !== 'off' && displayedFps > 0) {
       ({ multiplier, source } = hold);
       fgName = fgName || hold.name;
       renderedFps = displayedFps / multiplier;
@@ -362,34 +369,55 @@ class PresentMon extends EventEmitter {
   }
 
   /**
-   * Generated frames are cheap on the GPU (an interpolation pass) while real frames carry the
-   * whole render. If per-present GPU busy time splits cleanly into a heavy and a light group,
-   * presents/heavy is the multiplier. Requires agreement across several windows before trusting it.
+   * Untagged frame generation shows up as a rhythm in per-present GPU work: each real frame (heavy: the whole
+   * render) is followed by N generated ones (light: an interpolation pass). Generated frames aren't always
+   * near-free (Wuthering Waves: ~3.2 ms vs ~6.6 ms), so instead of demanding a big ratio we look for the
+   * strict heavy/light rhythm, which ordinary rendering doesn't produce. Multiplier = N + 1.
+   * gpu: per-present GPU busy times in chronological order.
    */
-  cadenceMultiplier(pid, gpu) {
+  static cadenceVote(gpu, { minRatio = 1.5, minShare = 0.8 } = {}) {
+    if (gpu.length < 24) return 1;
+    // Split light/heavy at the threshold that best separates the two groups (Otsu).
+    const s = gpu.slice().sort((a, b) => a - b);
+    const total = s.reduce((a, b) => a + b, 0);
+    let best = null, lowSum = 0;
+    for (let i = 1; i < s.length; i++) {
+      lowSum += s[i - 1];
+      const nLo = i, nHi = s.length - i;
+      const mLo = lowSum / nLo, mHi = (total - lowSum) / nHi;
+      const between = nLo * nHi * (mHi - mLo) ** 2;
+      if (!best || between > best.between) best = { between, thr: (s[i - 1] + s[i]) / 2, mLo, mHi };
+    }
+    if (!best || best.mHi < Math.max(0.05, best.mLo) * minRatio) return 1;   // groups must clearly differ
+    // Lengths of light runs between heavy frames.
+    const runs = [];
+    let run = 0, started = false;
+    for (const v of gpu) {
+      if (v >= best.thr) { if (started) runs.push(run); run = 0; started = true; } else run++;
+    }
+    if (runs.length < 8) return 1;
+    const counts = {};
+    for (const r of runs) counts[r] = (counts[r] || 0) + 1;
+    const [k, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0].map(Number);
+    return k >= 1 && k <= 3 && n / runs.length >= minShare ? k + 1 : 1;
+  }
+
+  /**
+   * Cadence vote from GPU busy and GPU wait, smoothed over recent windows: on after 3 agreeing votes, off
+   * after 3 "no FG" votes. GPU busy can lose the rhythm in light scenes (Wuthering Waves: real and generated
+   * frames both ~4.8 ms), while GPU wait keeps it with a large split (9-32x there). GPU wait must show a big
+   * split and a near-perfect rhythm; GPU time was tried and rejected: a browser's compositor fooled it.
+   */
+  cadenceMultiplier(pid, series) {
     let st = this.cadence.get(pid);
     if (!st) { st = { votes: [], value: 1 }; this.cadence.set(pid, st); }
-    let vote = 1;
-    if (gpu.length >= 24) {
-      const s = gpu.slice().sort((a, b) => a - b);
-      let best = null;
-      for (let i = Math.floor(s.length * 0.25); i <= Math.floor(s.length * 0.8); i++) {
-        const lo = s.slice(0, i), hi = s.slice(i);
-        const mlo = lo.reduce((a, b) => a + b, 0) / lo.length;
-        const mhi = hi.reduce((a, b) => a + b, 0) / hi.length;
-        const gap = s[i] / Math.max(0.05, s[i - 1]);
-        if (!best || gap > best.gap) best = { gap, ratio: mhi / Math.max(0.05, mlo), heavy: hi.length };
-      }
-      if (best && best.gap > 1.8 && best.ratio > 2.5) {
-        const m = Math.round(gpu.length / best.heavy);
-        if (m >= 2 && m <= 4) vote = m;
-      }
-    }
+    const vote = [
+      PresentMon.cadenceVote(series.busy),
+      PresentMon.cadenceVote(series.wait, { minRatio: 3, minShare: 0.9 }),
+    ].find((v) => v > 1) || 1;
     st.votes.push(vote);
-    if (st.votes.length > 6) st.votes.shift();
-    const agree = st.votes.filter((v) => v === vote).length;
-    if (agree >= 5) st.value = vote;
-    else if (st.votes.filter((v) => v === 1).length >= 4) st.value = 1;
+    if (st.votes.length > 4) st.votes.shift();
+    if (st.votes.filter((v) => v === vote).length >= 3) st.value = vote;
     return st.value;
   }
 

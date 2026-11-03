@@ -262,6 +262,10 @@
     // Driver FG (AFMF) multiplies frames after RTSS's cap; the graph shows displayed frames.
     const driverFg = fps?.fg?.active && fps.fg.source === 'frame-type';
     capLimit = lim ? lim.limit * (driverFg ? fps.fg.multiplier : 1) : 0;
+    // FG output pinned at the cap: say so, or "90 rendered" looks wrong next to a game that does 120 without FG.
+    const pinned = !!(fps?.fg?.active && capLimit && fps.displayedFps >= capLimit * 0.97);
+    $('fgCapped').hidden = !pinned;
+    if (pinned) $('fgCapped').textContent = `capped at ${Math.round(capLimit)}`;
     $('capChip').hidden = !lim;
     if (lim) $('capChip').textContent = `CAP ${+lim.limit.toFixed(2)}${{ 'front-edge': ' · FES', 'back-edge': ' · BES' }[lim.mode] || ''}`;
 
@@ -377,7 +381,7 @@
     let base = 118;
     demoTimer = setInterval(() => {
       const dt = cfg?.overlay?.updateMs || 250;
-      base += (Math.random() - 0.5) * 6; base = Math.max(110, Math.min(120, base)); // demo runs against a 120 fps cap
+      base += (Math.random() - 0.5) * 2; base = Math.max(118, Math.min(120, base)); // demo runs pinned at its 120 fps cap
       const mult = cfg?.framegen?.inGameMultiplier === 'off' ? 1 : (+cfg?.framegen?.inGameMultiplier || 2);
       const disp = base * mult;
       const frames = [];

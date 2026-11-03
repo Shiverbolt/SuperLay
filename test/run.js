@@ -67,11 +67,29 @@ test('in-game FG via GPU cadence needs several agreeing windows', () => {
   feed(pm, rows);
   const hint = { fgHint: { library: 'FSR 3 FG', loaded: true } };
   let s;
-  for (let k = 0; k < 4; k++) s = pm.stats(100, hint);
-  assert.strictEqual(s.fg.active, false, 'should not trust a single window');
-  s = pm.stats(100, hint);
+  for (let k = 0; k < 2; k++) s = pm.stats(100, hint);
+  assert.strictEqual(s.fg.active, false, 'should not trust one or two windows');
+  s = pm.stats(100, hint);           // third agreeing window
   assert.strictEqual(s.fg.source, 'cadence');
   near(s.renderedFps, 80, 1, 'rendered');
+});
+
+test('cadence: Wuthering Waves rhythm (generated frames not free) and GPU-wait fallback', () => {
+  // Heavy 6.6 ms / light 3.2 ms alternating: only ~2x apart, but a strict rhythm.
+  const busy = Array.from({ length: 180 }, (_, i) => (i % 2 ? 3.2 + (i % 7) * 0.05 : 6.6 + (i % 5) * 0.05));
+  assert.strictEqual(PresentMon.cadenceVote(busy), 2);
+  // Light scene: busy converges (no usable rhythm) but GPU wait keeps a big split.
+  const flatBusy = Array.from({ length: 180 }, (_, i) => 4.8 + ((i * 7) % 5) * 0.04);
+  const wait = Array.from({ length: 180 }, (_, i) => (i % 2 ? 2.5 + (i % 3) * 0.1 : 0.1));
+  assert.strictEqual(PresentMon.cadenceVote(flatBusy), 1);
+  assert.strictEqual(PresentMon.cadenceVote(wait, { minRatio: 3, minShare: 0.9 }), 2);
+  // 3x: heavy, light, light
+  const triple = Array.from({ length: 180 }, (_, i) => (i % 3 === 0 ? 8 : 1));
+  assert.strictEqual(PresentMon.cadenceVote(triple), 3);
+  // Irregular bimodal noise (a browser's compositor) is not frame gen
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const noise = Array.from({ length: 180 }, () => (rnd() < 0.5 ? 0.3 : 1.5));
+  assert.strictEqual(PresentMon.cadenceVote(noise), 1);
 });
 
 test('FG library loaded but uniform GPU cadence → FG off', () => {

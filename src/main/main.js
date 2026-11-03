@@ -716,6 +716,9 @@ app.whenReady().then(() => {
   settings.onChange((data, patch) => {
     if (patch.overlay?.updateMs) startLoop();
     if (patch.hotkeys || patch.media) registerHotkeys();
+    if (patch.media?.showNowPlaying && overlayWin) {
+      media.state().then((res) => { if (res) overlayWin?.webContents.send('overlay:media', res); });
+    }
     if (patch.presentmon) startPresentMon();
     if (patch.general && 'launchAtStartup' in patch.general) app.setLoginItemSettings({ openAtLogin: data.general.launchAtStartup, args: ['--hidden'] });
     pushConfig();

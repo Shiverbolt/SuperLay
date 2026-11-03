@@ -101,11 +101,14 @@ input[type=range]:active::-webkit-slider-thumb { transform: scale(1.2); }
 .layout-pick button { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 18px 9px; color: var(--muted); }
 .layout-pick button:hover, .pos-pick button:hover { transform: translateY(-1px); }
 .layout-pick button.on, .pos-pick button.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent); color: var(--text); }
-.lp { display: flex; gap: 3px; width: 88px; height: 46px; padding: 6px; border-radius: 7px; background: var(--panel2); }
-.lp i { display: block; border-radius: 3px; background: var(--line); }
-.lp-pill { align-items: center; } .lp-pill i { height: 14px; flex: 1; } .lp-pill i:first-child { background: var(--accent); flex: 1.3; }
-.lp-card { flex-direction: column; width: 56px; } .lp-card i { flex: 1; } .lp-card i:first-child { background: var(--accent); flex: 1.4; }
-.lp-min { align-items: flex-start; } .lp-min i { width: 26px; height: 12px; background: var(--accent); }
+/* Layout icons: a tiny screen with a miniature of the overlay where it sits (top-left). */
+.lp { width: 96px; height: 56px; border-radius: 7px; background: linear-gradient(160deg, var(--panel2), var(--bg)); box-shadow: 0 0 0 1px var(--line) inset; }
+.lp-ov { fill: color-mix(in oklab, var(--line) 90%, var(--text) 10%); }
+.lp-acc { fill: var(--accent); }
+.lp-dim { fill: color-mix(in oklab, var(--muted) 55%, transparent); }
+.lp-ln { fill: none; stroke: var(--accent2); stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+.lp-ln2 { fill: var(--accent2); }
+.layout-pick button.on .lp { box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 60%, transparent) inset; }
 .pos-pick { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(2, 30px); gap: 6px; padding: 8px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); width: max-content; }
 .pos-pick button { position: relative; }
 .pos-pick button.on::after { content: ''; position: absolute; inset: 8px 10px; border-radius: 3px; background: var(--accent); animation: chip 380ms var(--spring); }

@@ -90,6 +90,7 @@
     ['latency', 'PC latency', 'Needs Reflex/PCL markers from the game'],
     ['pacing', 'Pacing', 'Average frame-to-frame change; lower is smoother'],
     ['limiter', 'Frame cap', 'RTSS cap and limiter mode'],
+    ['nowPlaying', 'Now playing', 'The song playing in Spotify, your browser or another player'],
     ['upscaler', 'Upscaler', 'DLSS / FSR / XeSS and version'],
     ['gpuLoad', 'GPU load', ''],
     ['gpuTemp', 'GPU temperature', ''],
@@ -101,8 +102,10 @@
   ];
   $('#metricToggles').innerHTML = METRICS.map(([k, n, d]) => `
     <label class="toggle-row"><span>${n}${d ? `<small>${d}</small>` : ''}</span><input type="checkbox" data-metric="${k}"><i class="sw"></i></label>`).join('');
-  $$('[data-metric]').forEach((el) => el.addEventListener('change', () => set(`metrics.${el.dataset.metric}`, el.checked)));
-  function syncMetrics() { $$('[data-metric]').forEach((el) => { el.checked = S.metrics[el.dataset.metric] !== false; }); }
+  // "Now playing" lives with the music settings (also on the Hotkeys page); the rest are overlay metrics.
+  const metricPath = (k) => (k === 'nowPlaying' ? 'media.showNowPlaying' : `metrics.${k}`);
+  $$('[data-metric]').forEach((el) => el.addEventListener('change', () => set(metricPath(el.dataset.metric), el.checked)));
+  function syncMetrics() { $$('[data-metric]').forEach((el) => { el.checked = get(S, metricPath(el.dataset.metric)) !== false; }); }
 
   // ---------------------------------------------------------------- presets
   $('#presets').innerHTML = Object.entries(presets).map(([k, p]) => `
