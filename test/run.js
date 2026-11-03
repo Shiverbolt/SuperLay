@@ -85,6 +85,58 @@ test('FG library loaded but uniform GPU cadence → FG off', () => {
   near(s.renderedFps, 120, 1, 'rendered');
 });
 
+// Pattern measured in The Witcher 3 with OptiScaler FG: untagged generated frames (0 ms GPU busy) alternate with
+// real frames (~7.3 ms), and Fakenvapi's Reflex markers arrive only ~3 times a second.
+function witcherLike({ sims = true, until = 12000 } = {}) {
+  const rows = [];
+  for (let i = 0, t = 0; t < until; i++, t += 8.33) {
+    const real = i % 2 === 0;
+    rows.push({ t, between: 8.33, display: 8.33, gpu: real ? 7.3 : 0, sim: sims && real && i % 40 === 0 ? '16.7' : 'NA' });
+  }
+  return rows;
+}
+// Feeds rows as they'd arrive live and samples stats every 250 ms from `from` on.
+function timeline(rows, from, opts) {
+  const pm = new PresentMon();
+  pm.onLine(HEADER);
+  const out = [];
+  let next = from;
+  for (const r of rows) {
+    pm.onLine(row(r));
+    if (r.t >= next) { out.push(pm.stats(100, opts)); next += 250; }
+  }
+  return out;
+}
+
+test('untagged FG with sparse Reflex markers: steady ON, no flicker', () => {
+  const tl = timeline(witcherLike(), 4000, { fgHint: { library: 'FSR 3 FG', loaded: true } });
+  assert.ok(tl.every((s) => s.fg.active), `on in ${tl.filter((s) => s.fg.active).length}/${tl.length} updates`);
+  assert.strictEqual(tl[tl.length - 1].fg.multiplier, 2);
+  near(tl[tl.length - 1].renderedFps, 60, 1, 'rendered');
+});
+
+test('untagged FG without Reflex: 0 ms generated frames drive cadence detection', () => {
+  const tl = timeline(witcherLike({ sims: false }), 4000, { fgHint: { library: 'FSR 3 FG', loaded: true } });
+  const on = tl.filter((s) => s.fg.active);
+  assert.ok(on.length >= tl.length - 5, `on in ${on.length}/${tl.length} updates`);
+  assert.ok(on.every((s) => s.fg.source === 'cadence' && s.fg.multiplier === 2));
+});
+
+test('FG hysteresis: brief gaps hold, a real stop turns it off', () => {
+  // FG frames for 5 s (tagged), then 4 s of plain 120 fps
+  const rows = [];
+  let t = 0;
+  for (let i = 0; t < 5000; i++, t += 8.33) rows.push({ t, type: i % 2 ? 'Unknown' : 'Application', between: 8.33, display: 8.33 });
+  for (; t < 9000; t += 8.33) rows.push({ t, between: 8.33, display: 8.33 });
+  const tl = timeline(rows, 2000);
+  const at = (ms) => tl[Math.round((ms - 2000) / 250)];
+  assert.ok(at(4750).fg.active, 'on during FG');
+  assert.ok(at(6250).fg.active, 'held while the 1 s window empties of FG frames');
+  assert.ok(!at(8750).fg.active, 'off once FG has really stopped');
+  let flips = 0; for (let i = 1; i < tl.length; i++) if (tl[i].fg.active !== tl[i - 1].fg.active) flips++;
+  assert.strictEqual(flips, 1, 'exactly one switch');
+});
+
 test('manual multiplier', () => {
   const pm = new PresentMon();
   const ft = 1000 / 240, rows = [];

@@ -36,6 +36,7 @@ class PresentMon extends EventEmitter {
     this.useOptional = true;
     this.cadence = new Map();    // pid -> { votes: [], multiplier }
     this.graphCursor = new Map();
+    this.fgHold = new Map();     // pid -> last FG-on decision, for hysteresis
   }
 
   static locate(configured, roots) {
@@ -232,10 +233,19 @@ class PresentMon extends EventEmitter {
     const from = now - fpsWindowMs;
 
     let dispN = 0, dispMs = 0, genN = 0, repeatN = 0, presN = 0, presMs = 0;
-    let simSum = 0, simN = 0, latSum = 0, latN = 0;
+    let latSum = 0, latN = 0;
     const gpu = [];
     const genTypes = new Set();
     let anyDisplay = false, anyType = false;
+
+    // Reflex/PCL simulation intervals can be sparse (OptiScaler's Fakenvapi: ~3 per second), so look back 3 s
+    // and use the median: one 1 s window often held too few samples and FG blinked off.
+    const sims = [];
+    for (let i = rows.length - 1; i >= 0 && rows[i].t > now - Math.max(3000, fpsWindowMs); i--) {
+      const s = rows[i].sim;
+      if (s !== null && s > 0) sims.push(s);
+    }
+
     for (let i = rows.length - 1; i >= 0; i--) {
       const r = rows[i];
       if (r.t <= from) break;
@@ -252,9 +262,9 @@ class PresentMon extends EventEmitter {
         }
       }
       if (!generated && r.between !== null && r.between > 0) { presN++; presMs += r.between; }
-      if (r.sim !== null && r.sim > 0) { simSum += r.sim; simN++; }
       if (r.lat !== null && r.lat > 0) { latSum += r.lat; latN++; }
-      if (r.gpu !== null && r.gpu > 0 && !generated) gpu.push(r.gpu);
+      // 0 ms GPU busy is meaningful: untagged generated frames often show exactly that.
+      if (r.gpu !== null && r.gpu >= 0 && !generated) gpu.push(r.gpu);
     }
 
     const presentFps = presMs > 0 ? (presN * 1000) / presMs : 0;
@@ -269,7 +279,7 @@ class PresentMon extends EventEmitter {
       fgName = [...genTypes].map(prettyType).join(' + ');
     } else if (fgHint && fgHint.loaded) {
       fgName = fgHint.library;
-      const simFps = simN >= 5 ? 1000 / (simSum / simN) : 0;
+      const simFps = sims.length >= 3 ? 1000 / percentile(sims.slice().sort((a, b) => a - b), 0.5) : 0;
       const manual = +multiplierSetting;
       if (multiplierSetting === 'off') {
         source = 'none';
@@ -282,8 +292,20 @@ class PresentMon extends EventEmitter {
         if (m > 1) { multiplier = m; renderedFps = displayedFps / m; source = 'cadence'; }
       }
     }
+    // Hysteresis: FG turns on at once, but only turns off after 1.5 s without evidence, so a sparse signal
+    // can't make the badge blink. An explicit "off" setting applies immediately.
+    const hold = this.fgHold.get(pid);
+    if (multiplier > 1.25) {
+      this.fgHold.set(pid, { at: now, multiplier, source, name: fgName });
+    } else if (hold && now - hold.at < 1500 && multiplierSetting !== 'off' && displayedFps > 0) {
+      ({ multiplier, source } = hold);
+      fgName = fgName || hold.name;
+      renderedFps = displayedFps / multiplier;
+    }
     const fgActive = multiplier > 1.25;
     if (!fgActive) { renderedFps = displayedFps; multiplier = 1; if (source !== 'none') source = 'none'; }
+    // 1.98 / 2.02 are 2×: snap near-integers so the badge doesn't alternate between "2×" and "2.0×".
+    if (Math.abs(multiplier - Math.round(multiplier)) < 0.08) multiplier = Math.round(multiplier);
 
     // ---- frame times for the graph, 1% low and pacing ----
     // 'present' (default) is present-to-present, what RTSS shows and what a frame cap flattens. Display-change
@@ -371,7 +393,7 @@ class PresentMon extends EventEmitter {
     return st.value;
   }
 
-  resetGraph(pid) { this.graphCursor.delete(pid); }
+  resetGraph(pid) { this.graphCursor.delete(pid); this.fgHold.delete(pid); }
 }
 
 function prettyType(t) {

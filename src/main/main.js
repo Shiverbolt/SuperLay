@@ -200,6 +200,14 @@ function computeFrame() {
     if (fps) fps.fg.available = fgDet ? fgDet.label : null;
   }
   state.lastStats = fps;
+  // Developer aid: SUPERLAY_FG_LOG=<file> records every frame-gen decision (off unless the variable is set).
+  if (process.env.SUPERLAY_FG_LOG && t) {
+    const chains = [...pm.chains.values()].filter((c) => c.pid === t.pid).map((c) => c.rows.length);
+    fs.appendFile(process.env.SUPERLAY_FG_LOG, `${JSON.stringify({
+      t: Date.now(), app: t.app, disp: fps && +fps.displayedFps.toFixed(1), rend: fps && +fps.renderedFps.toFixed(1),
+      fg: fps?.fg, typeCol: fps?.frameTypeColumn, chains, hint: t.detection?.fg?.label || null, pmNow: Math.round(pm.now),
+    })}\n`, () => {});
+  }
   if (fps && fps.displayedFps > 0) {
     const now = Date.now();
     state.fpsHistory.push({ t: now, displayed: fps.displayedFps, rendered: fps.renderedFps });
