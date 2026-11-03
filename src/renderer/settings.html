@@ -259,6 +259,25 @@
         </div>
         <p class="note">Click a shortcut, then press the new combination. Esc cancels, Backspace clears.</p>
         <p class="warn-text" id="hkWarn"></p>
+
+        <h2>Music controls</h2>
+        <div class="group">
+          <label class="toggle-row"><span>Music hotkeys<small>Control Spotify, browser tabs, Apple Music, Media Player and other apps Windows shows as playing</small></span><input type="checkbox" data-bind="media.enabled"><i class="sw"></i></label>
+          <div class="hk"><span>Play / pause</span><button class="key" data-hk="mediaPlayPause"></button></div>
+          <div class="hk"><span>Next track</span><button class="key" data-hk="mediaNext"></button></div>
+          <div class="hk"><span>Previous track</span><button class="key" data-hk="mediaPrev"></button></div>
+          <label class="toggle-row"><span>Show the track on the overlay<small>A short notice in game when you use a music hotkey</small></span><input type="checkbox" data-bind="media.showToast"><i class="sw"></i></label>
+          <label class="toggle-row"><span>Always show what's playing<small>A "now playing" chip on the overlay</small></span><input type="checkbox" data-bind="media.showNowPlaying"><i class="sw"></i></label>
+        </div>
+        <div class="now-playing-box">
+          <div class="np-art" id="npIcon">♪</div>
+          <div class="np-meta"><b id="npTitle">–</b><span id="npSub"></span></div>
+          <div class="np-btns">
+            <button class="btn ghost" data-media="prev" title="Previous">⏮</button>
+            <button class="btn ghost" data-media="playPause" title="Play / pause">⏯</button>
+            <button class="btn ghost" data-media="next" title="Next">⏭</button>
+          </div>
+        </div>
       </section>
 
       <!-- ================================================= components -->

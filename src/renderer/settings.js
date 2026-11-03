@@ -22,6 +22,7 @@
     if (b.dataset.page === 'limiter') { limiterDirty = false; loadLimiter(); }
     if (b.dataset.page === 'components') loadComps(true);
     if (b.dataset.page === 'optiscaler') loadOpti(true);
+    if (b.dataset.page === 'hotkeys') api.mediaState().then(renderMedia);
     $$('.seg, .layout-pick, .pos-pick').forEach(placeThumb);
   }));
 
@@ -410,6 +411,18 @@
   });
   api.on('opti:changed', () => loadOpti(false));
   setInterval(() => { if (!document.hidden && $('.page[data-page="optiscaler"]').classList.contains('active')) loadOpti(false); }, 4000);
+
+  // ---------------------------------------------------------------- music
+  function renderMedia(m) {
+    if (!m) return;
+    $('#npIcon').textContent = m.active ? (m.playing ? '▶' : '⏸') : '♪';
+    $('#npTitle').textContent = m.active && m.title ? m.title : 'Nothing playing';
+    $('#npSub').textContent = m.active ? [m.artist, m.app].filter(Boolean).join(' · ') : 'Start music in any player and it shows up here';
+  }
+  $$('[data-media]').forEach((b) => b.addEventListener('click', async () => renderMedia(await api.mediaAct(b.dataset.media))));
+  setInterval(async () => {
+    if (!document.hidden && $('.page[data-page="hotkeys"]').classList.contains('active')) renderMedia(await api.mediaState());
+  }, 2000);
 
   // ---------------------------------------------------------------- general
   const bl = $('#blocklist');

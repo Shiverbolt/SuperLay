@@ -194,6 +194,7 @@
       el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap');
     }
     if (c.demo || embedded) startDemo(); else stopDemo();
+    setNowPlaying(lastMedia);
     queueMeasure();
   }
 
@@ -274,6 +275,51 @@
       $('upChip').title = up.confidence === 'active' ? 'Loaded by the game' : 'Shipped with the game; could not confirm it is active';
     }
     queueMeasure();
+  }
+
+  // ------------------------------------------------------------ music: toast + now-playing chip
+  const ICONS = { next: '⏭', prev: '⏮', play: '▶', pause: '⏸', none: '♪' };
+  let toastTimer = null, unmountTimer = null;
+  function showToast(m) {
+    const t = $('toast');
+    const icon = m.toast === 'next' ? ICONS.next : m.toast === 'prev' ? ICONS.prev : m.playing ? ICONS.play : m.active ? ICONS.pause : ICONS.none;
+    $('tIcon').textContent = icon;
+    if (m.active && m.title) {
+      $('tTitle').textContent = m.title;
+      $('tSub').textContent = [m.artist, m.app].filter(Boolean).join(' · ');
+    } else {
+      $('tTitle').textContent = m.fallback ? 'Media key sent' : 'Nothing playing';
+      $('tSub').textContent = m.fallback ? 'No player reported a track' : 'Start music in any player';
+    }
+    clearTimeout(toastTimer); clearTimeout(unmountTimer);
+    t.classList.add('mounted');
+    void t.offsetWidth;                       // commit display before animating in
+    t.classList.add('show');
+    queueMeasure();
+    toastTimer = setTimeout(() => {
+      t.classList.remove('show');
+      unmountTimer = setTimeout(() => { t.classList.remove('mounted'); queueMeasure(); }, 320);
+    }, 2600);
+  }
+
+  function setNowPlaying(m) {
+    const chip = $('npChip');
+    const on = !!(cfg?.media?.showNowPlaying && m?.active && m.title);
+    chip.hidden = !on;
+    if (on) {
+      $('npText').textContent = m.artist ? `${m.title} — ${m.artist}` : m.title;
+      chip.classList.toggle('paused', !m.playing);
+      chip.title = m.app ? `Playing in ${m.app}` : '';
+    }
+    queueMeasure();
+  }
+
+  let lastMedia = null;
+  function onMedia(m) {
+    if (!m) return;
+    lastMedia = m;
+    setNowPlaying(m);
+    if (m.toast) showToast(m);
   }
 
   function setVisible(v) {
@@ -372,6 +418,7 @@
     api.onConfig(applyConfig);
     api.onFrame(applyFrame);
     api.onVisible(setVisible);
+    api.onMedia(onMedia);
   } else {
     window.addEventListener('message', (e) => {
       if (e.source !== window.parent || !e.data) return;

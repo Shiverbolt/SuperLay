@@ -68,6 +68,14 @@ const DEFAULTS = {
     toggleOverlay: 'Alt+Shift+O',
     cycleLayout: 'Alt+Shift+L',
     openSettings: 'Alt+Shift+S',
+    mediaPlayPause: 'Ctrl+Alt+Space',
+    mediaNext: 'Ctrl+Alt+Right',
+    mediaPrev: 'Ctrl+Alt+Left',
+  },
+  media: {
+    enabled: true,           // music hotkeys
+    showToast: true,         // show the track on the overlay after a music hotkey
+    showNowPlaying: false,   // keep a "now playing" chip on the overlay
   },
   presentmon: {
     path: '',

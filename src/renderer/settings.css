@@ -261,6 +261,14 @@ input[type=number]:focus { border-color: var(--accent); }
 .key.rec { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent); animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent) 10%, transparent); } }
 
+.now-playing-box { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.np-art { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 18px; color: #0d0d10; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.np-meta { display: flex; flex-direction: column; min-width: 0; }
+.np-meta b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-meta span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-btns { display: flex; gap: 6px; }
+.np-btns .btn { width: 38px; padding: 7px 0; font-size: 14px; }
+
 /* ---------------------------------------------------------------- diagnostics */
 .kv { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; }
 .kv + .kv { border-top: 1px solid var(--line); }

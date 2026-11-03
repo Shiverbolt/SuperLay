@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('superlay', {
   optiStatus: invoke('opti:status'),
   optiAct: invoke('opti:act'),
   rescanLibrary: invoke('library:rescan'),
+  mediaState: invoke('media:state'),
+  mediaAct: invoke('media:act'),
   browsePresentMon: invoke('pm:browse'),
   restartPresentMon: invoke('pm:restart'),
   relaunchAdmin: invoke('app:relaunchAdmin'),

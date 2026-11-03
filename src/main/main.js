@@ -10,6 +10,7 @@ const { Helper } = require('./helper');
 const { Detector } = require('./detect');
 const { ThemeStore, identify, presetTheme, customTheme, PRESETS } = require('./theme');
 const { makeIcon } = require('./icon');
+const { Media } = require('./media');
 const rtss = require('./rtss');
 const { Components } = require('./components');
 const { OptiScaler } = require('./optiscaler');
@@ -92,7 +93,7 @@ function pushConfig() {
   if (!overlayWin) return;
   const S = settings.get();
   overlayWin.webContents.send('overlay:config', {
-    overlay: S.overlay, metrics: S.metrics, stats: S.stats, theme: S.theme, framegen: S.framegen, limiter: S.limiter,
+    overlay: S.overlay, metrics: S.metrics, stats: S.stats, theme: S.theme, framegen: S.framegen, limiter: S.limiter, media: S.media,
     palette: currentTheme(),
     cover: state.target?.entry?.thumb || null,
     gameName: state.demo ? 'Preview' : (state.target?.entry?.name || state.target?.game?.name || ''),
@@ -473,6 +474,29 @@ async function optiAct(key, action, opts = {}) {
 }
 
 // ------------------------------------------------------------------ hotkeys, tray
+// ------------------------------------------------------------------ music controls
+const media = new Media();
+let lastMedia = null;
+
+async function mediaAction(kind) {
+  const res = await media[kind]();
+  if (!res) return;
+  lastMedia = res;
+  // Show the track on the overlay (only while it's visible: outside a game you can see your player).
+  if (overlayWin && state.shown && settings.get().media.showToast) {
+    overlayWin.webContents.send('overlay:media', { ...res, toast: kind });
+  }
+}
+
+// "Now playing" chip: refresh every few seconds while the overlay is up and the chip is enabled.
+setInterval(async () => {
+  if (!settings || !settings.get().media.showNowPlaying || !overlayWin || !state.shown) return;
+  const res = await media.state();
+  if (!res) return;
+  lastMedia = res;
+  overlayWin.webContents.send('overlay:media', res);
+}, 3000);
+
 function registerHotkeys() {
   globalShortcut.unregisterAll();
   const H = settings.get().hotkeys;
@@ -487,6 +511,11 @@ function registerHotkeys() {
     settings.set({ overlay: { layout: LAYOUTS[(LAYOUTS.indexOf(cur) + 1) % LAYOUTS.length] } });
   }, 'cycleLayout');
   reg(H.openSettings, openSettings, 'openSettings');
+  if (settings.get().media.enabled) {
+    reg(H.mediaPlayPause, () => mediaAction('playPause'), 'mediaPlayPause');
+    reg(H.mediaNext, () => mediaAction('next'), 'mediaNext');
+    reg(H.mediaPrev, () => mediaAction('prev'), 'mediaPrev');
+  }
 }
 
 function refreshTray() {
@@ -581,6 +610,8 @@ function setupIpc() {
   ipcMain.handle('overlay:demo', (_e, on) => { state.demo = !!on; pushConfig(); return state.demo; });
   ipcMain.handle('rtss:status', (_e, exe) => rtssStatus(exe));
   ipcMain.handle('rtss:apply', (_e, { exe, limit, mode }) => rtssApply(exe, limit, mode));
+  ipcMain.handle('media:state', () => media.state());
+  ipcMain.handle('media:act', (_e, kind) => (['playPause', 'next', 'prev'].includes(kind) ? media[kind]() : null));
   ipcMain.handle('hotkeys:pause', (_e, paused) => { if (paused) globalShortcut.unregisterAll(); else registerHotkeys(); return hotkeyFailures; });
 }
 
@@ -616,6 +647,15 @@ async function captureShots(dir) {
     await wait(3000);
     fs.writeFileSync(path.join(dir, `overlay-${layout}.png`), (await overlayWin.webContents.capturePage()).toPNG());
   }
+  // Music toast + now-playing chip, with a sample track (no real player is touched).
+  const originalMedia = settings.get().media;
+  settings.set({ overlay: { layout: 'pill', position: 'top-center' }, media: { showNowPlaying: true } });
+  await wait(1500);
+  const sample = { ok: true, active: true, app: 'Spotify', title: 'Midnight City', artist: 'M83', playing: true };
+  overlayWin.webContents.send('overlay:media', { ...sample, toast: 'next' });
+  await wait(900);
+  fs.writeFileSync(path.join(dir, 'overlay-music.png'), (await overlayWin.webContents.capturePage()).toPNG());
+  settings.set({ media: originalMedia });
   state.demo = false;
   settings.set({ overlay: { layout: original, position: originalPos } });
   await wait(300);
@@ -647,6 +687,7 @@ app.whenReady().then(() => {
   setInterval(refreshRtssStatus, 15000);
   rescanLibrary();
   setInterval(rescanLibrary, 10 * 60 * 1000);
+  if (settings.get().media.enabled) media.start(); // warm up so the first music hotkey is instant
 
   setupIpc();
   createOverlay();
@@ -666,7 +707,7 @@ app.whenReady().then(() => {
 
   settings.onChange((data, patch) => {
     if (patch.overlay?.updateMs) startLoop();
-    if (patch.hotkeys) registerHotkeys();
+    if (patch.hotkeys || patch.media) registerHotkeys();
     if (patch.presentmon) startPresentMon();
     if (patch.general && 'launchAtStartup' in patch.general) app.setLoginItemSettings({ openAtLogin: data.general.launchAtStartup, args: ['--hidden'] });
     pushConfig();
@@ -682,4 +723,5 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   pm?.stop(true);
   helper?.stop();
+  media.stop();
 });
