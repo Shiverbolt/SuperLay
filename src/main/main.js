@@ -14,6 +14,7 @@ const { Media } = require('./media');
 const rtss = require('./rtss');
 const { Components } = require('./components');
 const { OptiScaler } = require('./optiscaler');
+const optiConfig = require('./opti-config');
 const { scanLibrary, isNonGameExe } = require('./library');
 
 app.setAppUserModelId('app.superlay');
@@ -87,6 +88,17 @@ function currentTheme() {
   if (S.theme.mode === 'preset') return presetTheme(S.theme.preset);
   if (S.theme.mode === 'custom') return customTheme(S.theme.customAccent);
   return t?.entry?.theme || presetTheme(S.theme.preset);
+}
+
+/** SuperLay's own palette (the global theme setting), or one game's palette. */
+function superlayTheme() {
+  const S = settings.get();
+  return S.theme.mode === 'custom' ? customTheme(S.theme.customAccent) : presetTheme(S.theme.preset);
+}
+function gameTheme(key) {
+  const override = settings.get().games[key]?.themeOverride;
+  if (override) return override.startsWith('#') ? customTheme(override) : presetTheme(override);
+  return themes.get(key)?.theme || superlayTheme();
 }
 
 function pushConfig() {
@@ -438,6 +450,37 @@ function knownGames() {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Writes SuperLay's OptiScaler options for one game into its OptiScaler.ini. */
+function optiApply(game) {
+  const S = settings.get();
+  const menu = S.optiscaler.menu;
+  const palette = menu.style === 'game' ? gameTheme(game.key) : menu.style === 'superlay' ? superlayTheme() : null;
+  return optiConfig.applyToDir(path.dirname(game.exe), S.games[game.key]?.opti, menu, palette);
+}
+
+/** Saves one game's options (patch null = back to defaults) and writes them into its ini. */
+async function optiConfigure(key, patch) {
+  const game = knownGames().find((g) => g.key === key);
+  if (!game) return { ok: false, message: 'Game not found.' };
+  const cur = settings.get().games[key] || {};
+  // settings.set merges, so "reset" writes every default explicitly.
+  settings.set({ games: { [key]: { ...cur, opti: patch === null ? { ...optiConfig.GAME_DEFAULTS } : { ...(cur.opti || {}), ...patch } } } });
+  try {
+    const applied = optiApply(game);
+    return { ok: true, applied, running: state.target?.info?.path?.toLowerCase() === game.exe.toLowerCase() };
+  } catch (e) { return { ok: false, message: `Couldn't write OptiScaler.ini: ${e.message}` }; }
+}
+
+/** Menu options apply to every game that has OptiScaler. */
+async function optiMenu(patch) {
+  settings.set({ optiscaler: { menu: { ...settings.get().optiscaler.menu, ...patch } } });
+  let applied = 0;
+  for (const g of knownGames()) {
+    try { if (optiApply(g)) applied++; } catch { /* folder not writable; reported when that game is configured */ }
+  }
+  return { ok: true, applied };
+}
+
 async function optiStatus({ checkUpdates = false } = {}) {
   const cached = opti.cachedPackage();
   const latest = checkUpdates ? await opti.latest(false) : opti.latestInfo;
@@ -445,11 +488,13 @@ async function optiStatus({ checkUpdates = false } = {}) {
     let status;
     try { status = await opti.gameStatus(g); } catch (e) { status = { state: 'error', error: e.message }; }
     const running = state.target?.info?.path?.toLowerCase() === g.exe.toLowerCase();
-    return { ...g, running, ...status, busy: opti.busy[g.key] || null };
+    return { ...g, running, ...status, busy: opti.busy[g.key] || null, opti: { ...optiConfig.GAME_DEFAULTS, ...(settings.get().games[g.key]?.opti || {}) } };
   }));
   return {
     package: { version: cached?.version || '', latest: latest?.version || '', updateAvailable: !!(cached && latest?.version && latest.version !== cached.version), busy: opti.busy.package || null },
     vendor: gpuVendor(),
+    gpuName: helper.last?.gpu?.name || '',
+    menu: settings.get().optiscaler.menu,
     rtssInstalled: !!state.rtss.install,
     library: { scanning: !!state.library.scanning, scannedAt: state.library.scannedAt, stores: [...new Set(state.library.games.map((g) => g.store))] },
     games,
@@ -468,6 +513,7 @@ async function optiAct(key, action, opts = {}) {
     if (action === 'folder') { await shell.openPath(path.dirname(game.exe)); return { ok: true }; }
     let res;
     if (action === 'install' || action === 'update') res = await opti.install(game, { proxy: opts.proxy || 'auto', vendor: gpuVendor(), allowRisk: !!opts.allowRisk });
+    if (res && (action === 'install' || action === 'update')) { try { optiApply(game); } catch { /* OptiScaler's defaults still work */ } }
     // Managed installs are undone exactly; anything else (manual install, lost record) is cleaned up safely.
     else if (action === 'remove') res = await opti.removeUnmanaged(game);
     else return { ok: false, message: 'Unknown action.' };
@@ -604,6 +650,8 @@ function setupIpc() {
   ipcMain.handle('components:act', (_e, id, action) => (id === 'optiscaler' ? optiAct(null, 'download') : componentAct(id, action)));
   ipcMain.handle('opti:status', (_e, opts) => optiStatus(opts || {}));
   ipcMain.handle('opti:act', (_e, key, action, opts) => optiAct(key, action, opts || {}));
+  ipcMain.handle('opti:configure', (_e, key, patch) => optiConfigure(key, patch));
+  ipcMain.handle('opti:menu', (_e, patch) => optiMenu(patch || {}));
   ipcMain.handle('library:rescan', async () => { await rescanLibrary(); return state.library.games.length; });
   ipcMain.handle('pm:browse', async () => {
     const r = await dialog.showOpenDialog(settingsWin, { title: 'Locate PresentMon', filters: [{ name: 'PresentMon', extensions: ['exe'] }], properties: ['openFile'] });

@@ -545,6 +545,38 @@ test('anti-cheat signatures', () => {
   } finally { fsx.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('OptiScaler config: options map to ini keys, the rest of the ini is untouched', () => {
+  const oc = require('../src/main/opti-config');
+  const ini = [
+    '; header', '[Upscalers]', '; pick one', 'Dx11Upscaler=auto', 'Dx12Upscaler=auto', 'VulkanUpscaler=auto', '',
+    '[FrameGen]', 'Enabled=auto', 'FGInput=auto', 'FGOutput=auto', 'DebugView=auto', '',
+    '[FSR]', 'UpscalerIndex=auto', '[Menu]', 'ShortcutKey=auto', 'FpsOverlayPos=auto',
+  ].join('\r\n');
+  const palette = { accent: '#ff8000', bg: '#000000' };
+  const out = oc.patchIni(ini, oc.iniValues({ upscaler: 'fsr4', fg: 'dlssg', fgEngine: 'xefg', xefgMultiplier: 3, sharpen: 0.4 }, { key: 0x77, style: 'superlay' }, palette));
+  const r = oc.readIni(out);
+  assert.strictEqual(r.Upscalers.Dx12Upscaler, 'fsr31');
+  assert.strictEqual(r.Upscalers.Dx11Upscaler, 'fsr31_12');
+  assert.strictEqual(r.FSR.UpscalerIndex, '0');
+  assert.strictEqual(r.FSR.Fsr4Update, 'true');                 // missing key added inside its section
+  assert.deepStrictEqual([r.FrameGen.Enabled, r.FrameGen.FGInput, r.FrameGen.FGOutput], ['true', 'dlssg', 'xefg']);
+  assert.strictEqual(r.XeFG.InterpolationCount, '2');           // missing section appended; 3× = 2 generated
+  assert.strictEqual(r.Sharpness.Sharpness, '0.4');
+  assert.strictEqual(r.Menu.ShortcutKey, '0x77');
+  assert.deepStrictEqual([r.Menu.AccentColorR, r.Menu.AccentColorG, r.Menu.AccentColorB], ['1', '0.502', '0']);
+  assert.strictEqual(r.Menu.DisableSplash, 'true');
+  assert.strictEqual(r.Menu.FpsOverlayPos, 'auto');              // not managed: untouched
+  assert.ok(out.includes('; pick one') && out.includes('\r\n'));  // comments and line endings kept
+  // Back to defaults: every managed key returns to auto, so the ini behaves like a fresh one.
+  const back = oc.readIni(oc.patchIni(out, oc.iniValues({}, { style: 'optiscaler', splash: true }, null)));
+  assert.strictEqual(back.Upscalers.Dx12Upscaler, 'auto');
+  assert.strictEqual(back.FrameGen.FGInput, 'auto');
+  assert.strictEqual(back.Menu.AccentColorR, 'auto');
+  assert.strictEqual(back.Menu.ShortcutKey, 'auto');
+  // No hotkey
+  assert.strictEqual(oc.readIni(oc.patchIni(ini, oc.iniValues({}, { key: -1 }, null))).Menu.ShortcutKey, '-1');
+});
+
 (async () => {
   for (const [name, fn] of asyncTests) { await fn(); passed++; console.log(`  ✓ ${name}`); }
   console.log(`\n${passed} passed`);

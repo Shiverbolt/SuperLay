@@ -243,7 +243,7 @@
         <h1>OptiScaler</h1>
         <div class="opti-intro">
           <div>
-            <p><b>OptiScaler</b> swaps the upscaler a game uses. It intercepts the game's DLSS, FSR or XeSS and runs the one you pick instead, for example FSR 4 on a Radeon in a game that only offers DLSS or XeSS. In game, press <b>Insert</b> to open its menu and choose the upscaler.</p>
+            <p><b>OptiScaler</b> swaps the upscaler a game uses. It intercepts the game's DLSS, FSR or XeSS and runs the one you pick instead, for example FSR 4 on a Radeon in a game that only offers DLSS or XeSS. Pick the upscaler and frame generation per game with <b>Configure</b> below, or in game from OptiScaler's menu (<b>Insert</b>).</p>
             <p class="muted">SuperLay installs the official release and removes it exactly, restoring any game files it replaced. SuperLay isn't affiliated with the OptiScaler team; report installer problems to SuperLay, not to them.</p>
             <div class="row-btns">
               <button class="btn ghost" data-url="https://github.com/optiscaler/OptiScaler">OptiScaler on GitHub</button>
@@ -254,6 +254,7 @@
         </div>
         <div class="warn-box"><b>Single-player only.</b> Mods like OptiScaler can get accounts banned in online games. SuperLay blocks games where it finds anti-cheat.</div>
         <div class="warn-box" id="optiRtss" hidden><b>Using RTSS?</b> OptiScaler recommends turning on <i>Use Microsoft Detours API hooking</i> in RTSS → Setup, and turning RTSS off when using OptiScaler's own frame generation (OptiFG).</div>
+        <div class="opti-menu" id="optiMenu"></div>
         <div class="lib-head">
           <h2>Games</h2>
           <span class="muted" id="libInfo"></span>

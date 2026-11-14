@@ -46,6 +46,9 @@ const DEFAULTS = {
     graphSeconds: 5,
     frametimeSource: 'present', // present (like RTSS) | display
   },
+  optiscaler: {
+    menu: { style: 'superlay', key: 0x2d, scale: 1, splash: false },   // OptiScaler's in-game menu, every game
+  },
   theme: {
     mode: 'auto',              // auto (cover art) | preset | custom
     preset: 'midnight',

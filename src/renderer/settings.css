@@ -242,6 +242,20 @@ input[type=number]:focus { border-color: var(--accent); }
 .og .acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; max-width: 330px; }
 .og .acts .btn { padding: 6px 11px; font-size: 12px; }
 .og .acts select { font-size: 12px; padding: 5px 8px; }
+.og-cfg { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 26px; padding: 12px 4px 2px 68px; border-top: 1px solid var(--line); margin-top: 2px; animation: pageIn 360ms var(--spring) both; }
+.cfg-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; font-size: 12.5px; }
+.cfg-row small { color: var(--muted); font-size: 11px; line-height: 1.35; margin-top: 1px; max-width: 34ch; }
+.cfg-row select { font-size: 12px; padding: 5px 8px; min-width: 190px; max-width: 220px; }
+.cfg-foot { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0 2px; font-size: 11.5px; }
+.cfg-foot .btn { padding: 5px 11px; font-size: 12px; }
+.opti-menu { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 4px 0 6px; }
+.om-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.om-head h3 { margin: 0; font-size: 14px; }
+.om-head .muted { font-size: 12px; }
+.om-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 8px; }
+.om-grid label small { color: var(--muted); margin-bottom: 4px; }
+.om-grid select { width: 100%; }
+.opti-menu > small { font-size: 11.5px; }
 
 /* ---------------------------------------------------------------- games */
 .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; }
