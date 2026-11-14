@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, screen, dialog, shell, net } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, screen, dialog, shell, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -464,7 +464,8 @@ async function optiConfigure(key, patch) {
   if (!game) return { ok: false, message: 'Game not found.' };
   const cur = settings.get().games[key] || {};
   // settings.set merges, so "reset" writes every default explicitly.
-  settings.set({ games: { [key]: { ...cur, opti: patch === null ? { ...optiConfig.GAME_DEFAULTS } : { ...(cur.opti || {}), ...patch } } } });
+  settings.set({ games: { [key]: { ...cur, opti: patch === null ? { ...optiConfig.GAME_DEFAULTS } : { ...(cur.opti || {}), ...patch }, ...(patch === null || patch.fg ? { optiNote: null } : {}) } } });
+  fgWatch.delete(key);   // a new frame-gen choice gets a fresh check
   try {
     const applied = optiApply(game);
     return { ok: true, applied, running: state.target?.info?.path?.toLowerCase() === game.exe.toLowerCase() };
@@ -481,6 +482,48 @@ async function optiMenu(patch) {
   return { ok: true, applied };
 }
 
+/**
+ * Safety net for OptiScaler frame generation set from SuperLay: it hooks the game's swapchain from the first
+ * frame, and with some games (or other mods) the game then never shows a picture. If a game with such a setting
+ * runs for FG_HANG_MS without presenting a single frame, frame gen goes back to OptiScaler's default (off),
+ * so the next start works, and the user is told.
+ */
+const FG_HANG_MS = 75000;
+const fgWatch = new Map();   // game key -> { since, presented, reverted }
+let fgWatchBusy = false;
+async function fgWatchdog() {
+  if (fgWatchBusy) return;
+  fgWatchBusy = true;
+  try {
+    const S = settings.get();
+    const risky = pm.status.state !== 'running' ? [] : knownGames().filter((g) => {
+      const fg = S.games[g.key]?.opti?.fg;
+      return fg && fg !== 'default' && fg !== 'off';
+    });
+    for (const k of [...fgWatch.keys()]) if (!risky.some((g) => g.key === k)) fgWatch.delete(k);
+    if (!risky.length) return;
+    const mapped = await helper.mapped(risky.map((g) => g.exe));
+    const presenting = new Set([...pm.activeProcesses(6000).values()].map((p) => String(p.app || '').toLowerCase()));
+    risky.forEach((g, i) => {
+      const running = mapped?.files?.[i]?.state === 'loaded';
+      const w = optiConfig.fgHangStep(fgWatch.get(g.key), { running, presenting: presenting.has(path.basename(g.exe).toLowerCase()), now: Date.now(), limitMs: FG_HANG_MS });
+      if (w) fgWatch.set(g.key, w); else fgWatch.delete(g.key);
+      if (!w?.revertNow) return;
+      const cur = settings.get().games[g.key] || {};
+      const was = cur.opti.fg;
+      settings.set({ games: { [g.key]: { ...cur, opti: { ...cur.opti, fg: 'default' }, optiNote: { at: Date.now(), kind: 'fg-hang', was } } } });
+      try { optiApply(g); } catch (e) { console.error('fg revert', e); }
+      const name = themes.get(g.key)?.name || g.name;
+      try {
+        new Notification({ title: `${name}: frame generation turned off`, body: 'The game showed no picture with OptiScaler frame generation on. Close it and start it again.' }).show();
+      } catch { /* notifications unavailable */ }
+      sendSettings('opti:changed');
+    });
+  } catch (e) {
+    console.error('fg watchdog', e);
+  } finally { fgWatchBusy = false; }
+}
+
 async function optiStatus({ checkUpdates = false } = {}) {
   const cached = opti.cachedPackage();
   const latest = checkUpdates ? await opti.latest(false) : opti.latestInfo;
@@ -488,7 +531,7 @@ async function optiStatus({ checkUpdates = false } = {}) {
     let status;
     try { status = await opti.gameStatus(g); } catch (e) { status = { state: 'error', error: e.message }; }
     const running = state.target?.info?.path?.toLowerCase() === g.exe.toLowerCase();
-    return { ...g, running, ...status, busy: opti.busy[g.key] || null, opti: { ...optiConfig.GAME_DEFAULTS, ...(settings.get().games[g.key]?.opti || {}) } };
+    return { ...g, running, ...status, busy: opti.busy[g.key] || null, opti: { ...optiConfig.GAME_DEFAULTS, ...(settings.get().games[g.key]?.opti || {}) }, optiNote: settings.get().games[g.key]?.optiNote || null };
   }));
   return {
     package: { version: cached?.version || '', latest: latest?.version || '', updateAvailable: !!(cached && latest?.version && latest.version !== cached.version), busy: opti.busy.package || null },
@@ -744,6 +787,7 @@ app.whenReady().then(() => {
   setInterval(refreshRtssStatus, 15000);
   rescanLibrary();
   setInterval(rescanLibrary, 10 * 60 * 1000);
+  setInterval(fgWatchdog, 5000);
   if (settings.get().media.enabled) media.start(); // warm up so the first music hotkey is instant
 
   setupIpc();

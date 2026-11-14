@@ -577,6 +577,24 @@ test('OptiScaler config: options map to ini keys, the rest of the ini is untouch
   assert.strictEqual(oc.readIni(oc.patchIni(ini, oc.iniValues({}, { key: -1 }, null))).Menu.ShortcutKey, '-1');
 });
 
+test('frame-gen watchdog: reverts once for a game that never shows a frame, never for one that does', () => {
+  const { fgHangStep } = require('../src/main/opti-config');
+  const run = (presentAt, until, limitMs = 75000) => {
+    let w = null, reverts = 0;
+    for (let t = 0; t <= until; t += 5000) {
+      w = fgHangStep(w, { running: true, presenting: presentAt !== null && t >= presentAt, now: t, limitMs });
+      if (w.revertNow) reverts++;
+    }
+    return reverts;
+  };
+  assert.strictEqual(run(null, 300000), 1);        // hung: exactly one revert
+  assert.strictEqual(run(20000, 300000), 0);       // normal start: frames within 20 s
+  assert.strictEqual(run(70000, 300000), 0);       // slow start, still under the limit
+  assert.strictEqual(run(null, 70000), 0);         // not long enough yet
+  // Game closed: state resets, so the next start is watched again.
+  assert.strictEqual(fgHangStep({ since: 0, presented: false, reverted: true }, { running: false, presenting: false, now: 1, limitMs: 1 }), null);
+});
+
 (async () => {
   for (const [name, fn] of asyncTests) { await fn(); passed++; console.log(`  ✓ ${name}`); }
   console.log(`\n${passed} passed`);

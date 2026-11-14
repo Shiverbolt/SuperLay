@@ -168,4 +168,16 @@ function applyToDir(dir, cfg, menu, palette) {
   return true;
 }
 
-module.exports = { GAME_DEFAULTS, MENU_DEFAULTS, iniValues, patchIni, readIni, applyToDir };
+/**
+ * One watchdog step for a game started with OptiScaler frame gen. Returns the new watch state (null when the
+ * game isn't running); revertNow is true exactly once, when it ran limitMs without presenting a frame.
+ */
+function fgHangStep(w, { running, presenting, now, limitMs }) {
+  if (!running) return null;
+  const s = { since: now, presented: false, reverted: false, ...(w || {}), revertNow: false };
+  if (presenting) s.presented = true;
+  if (!s.presented && !s.reverted && now - s.since >= limitMs) { s.reverted = true; s.revertNow = true; }
+  return s;
+}
+
+module.exports = { GAME_DEFAULTS, MENU_DEFAULTS, iniValues, patchIni, readIni, applyToDir, fgHangStep };
